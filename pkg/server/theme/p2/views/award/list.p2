@@ -5,7 +5,20 @@
 {% block content %}
 <div class="flex-container flex-row flex-center">
   <div class="flex-item flex-max foreground box">
-    bar
+    <table>
+      <tr>
+        <th>Slug</th>
+        <th>Title</th>
+        <th>Subtitle</th>
+      </tr>
+      {% for award in awards %}
+      <tr>
+        <td>{{ award.Slug }}</td>
+        <td>{{ award.DispTitle }}</td>
+        <td>{{ award.DispSub }}</td>
+      </tr>
+      {% endfor %}
+    </table>
   </div>
 </div>
 {% endblock %}

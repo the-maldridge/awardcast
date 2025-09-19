@@ -6,7 +6,7 @@ package types
 type Award struct {
 	ID uint
 
-	Name      string
+	Slug      string `gorm:"unique"`
 	DispTitle string
 	DispSub   string
 	Image     []Image `gorm:"many2many:award_graphics;"`
