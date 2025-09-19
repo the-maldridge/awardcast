@@ -4,7 +4,13 @@
   </div>
   <div class="flex-item flex-max">
     <nav>
-      nav items
+      <div class="nav-container">
+        <div class="nav-header">Awards</div>
+        <div class="nav-dropdown">
+          <a class="nav-item" href="/admin/award/">List</a>
+          <a class="nav-item" href="/admin/award/bulk-add">Bulk Add</a>
+        </div>
+      </div>
     </nav>
   </div>
 </div>

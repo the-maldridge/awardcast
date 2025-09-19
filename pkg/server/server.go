@@ -71,6 +71,8 @@ func New() (*Server, error) {
 	s.r.Route("/admin", func(r chi.Router) {
 		r.Route("/award", func(r chi.Router) {
 			r.Get("/", s.uiViewAwardList)
+			r.Get("/bulk-add", s.uiViewAwardBulkForm)
+			r.Post("/bulk-add", s.uiViewAwardBulkSubmit)
 		})
 	})
 	return s, nil
@@ -105,8 +107,4 @@ func (s *Server) doTemplate(w http.ResponseWriter, r *http.Request, tmpl string,
 	if err := t.ExecuteWriter(ctx, w); err != nil {
 		s.templateErrorHandler(w, err)
 	}
-}
-
-func (s *Server) uiViewAwardList(w http.ResponseWriter, r *http.Request) {
-	s.doTemplate(w, r, "views/award/list.p2", nil)
 }
