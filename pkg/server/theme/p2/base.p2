@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>{% block title %}AwardCast{% endblock %}</title>
+    <link href="/static/css/theme.css" rel="stylesheet">
+  </head>
+  <body class="background">
+    {% include "fragments/nav.p2" %}
+    <div id="content">
+      {% block content %}{% endblock %}
+    </div>
+  </body>
+</html>

@@ -9,7 +9,7 @@ type Award struct {
 	Name      string
 	DispTitle string
 	DispSub   string
-	Image     []Image
+	Image     []Image `gorm:"many2many:award_graphics;"`
 }
 
 // Image is used to store images within the database that go with the

@@ -1,0 +1,112 @@
+package server
+
+import (
+	"context"
+	"embed"
+	"fmt"
+	"io/fs"
+	"log/slog"
+	"net/http"
+	"os"
+
+	"github.com/flosch/pongo2/v6"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+
+	"github.com/the-maldridge/awardcast/pkg/types"
+)
+
+// Server contains the awards server and its associated machinery.
+type Server struct {
+	r chi.Router
+	n *http.Server
+	d *gorm.DB
+
+	tmpls *pongo2.TemplateSet
+}
+
+//go:embed theme
+var efs embed.FS
+
+func New() (*Server, error) {
+	var tfs fs.FS
+	tfs, _ = fs.Sub(efs, "theme")
+	if path, ok := os.LookupEnv("AWARDCAST_DEBUG"); ok {
+		slog.Info("Debug mode enabled")
+		tfs = os.DirFS(path)
+	}
+	tsfs, _ := fs.Sub(tfs, "p2")
+
+	dbPath := os.Getenv("AWARDCAST_DB")
+	if dbPath == "" {
+		dbPath = "award.db"
+	}
+	d, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	if err != nil {
+		return nil, err
+	}
+
+	err = d.AutoMigrate(
+		&types.Award{},
+		&types.Image{},
+		&types.Recipient{},
+		&types.Winning{},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	s := &Server{
+		r:     chi.NewRouter(),
+		n:     &http.Server{},
+		d:     d,
+		tmpls: pongo2.NewSet("html", pongo2.NewFSLoader(tsfs)),
+	}
+
+	s.r.Use(middleware.Heartbeat("/-/alive"))
+	sfs, _ := fs.Sub(tfs, "static")
+	s.r.Handle("/static/*", http.StripPrefix("/static", http.FileServerFS(sfs)))
+	s.r.Route("/admin", func(r chi.Router) {
+		r.Route("/award", func(r chi.Router) {
+			r.Get("/", s.uiViewAwardList)
+		})
+	})
+	return s, nil
+}
+
+// Serve binds, initializes the mux, and serves forever.
+func (s *Server) Serve(bind string) error {
+	slog.Info("HTTP is starting")
+	s.n.Addr = bind
+	s.n.Handler = s.r
+	return s.n.ListenAndServe()
+}
+
+// Shutdown requests the underlying server gracefully cease operation.
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.n.Shutdown(ctx)
+}
+
+func (s *Server) templateErrorHandler(w http.ResponseWriter, err error) {
+	fmt.Fprintf(w, "Error while rendering template: %s\n", err)
+}
+
+func (s *Server) doTemplate(w http.ResponseWriter, r *http.Request, tmpl string, ctx pongo2.Context) {
+	if ctx == nil {
+		ctx = pongo2.Context{}
+	}
+	t, err := s.tmpls.FromCache(tmpl)
+	if err != nil {
+		s.templateErrorHandler(w, err)
+		return
+	}
+	if err := t.ExecuteWriter(ctx, w); err != nil {
+		s.templateErrorHandler(w, err)
+	}
+}
+
+func (s *Server) uiViewAwardList(w http.ResponseWriter, r *http.Request) {
+	s.doTemplate(w, r, "views/award/list.p2", nil)
+}
