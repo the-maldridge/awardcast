@@ -1,0 +1,20 @@
+{% extends "../../base.p2" %}
+
+{% block title %}Recipient List{% endblock %}
+
+{% block content %}
+<div class="flex-container flex-row flex-center">
+  <div class="flex-item flex-max foreground box">
+    <table>
+      <tr>
+        <th>Name</th>
+      </tr>
+      {% for recipient in recipients %}
+      <tr>
+        <td>{{ recipient.Name }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endblock %}

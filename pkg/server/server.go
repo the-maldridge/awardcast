@@ -76,6 +76,11 @@ func New() (*Server, error) {
 			r.Get("/bulk-add", s.uiViewAwardBulkForm)
 			r.Post("/bulk-add", s.uiViewAwardBulkSubmit)
 		})
+		r.Route("/recipient", func(r chi.Router) {
+			r.Get("/", s.uiViewRecipientList)
+			r.Get("/bulk-add", s.uiViewRecipientBulkForm)
+			r.Post("/bulk-add", s.uiViewRecipientBulkSubmit)
+		})
 	})
 	return s, nil
 }

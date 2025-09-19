@@ -26,7 +26,7 @@ type Image struct {
 type Recipient struct {
 	ID uint
 
-	Name string
+	Name string `gorm:"unique"`
 }
 
 // A Winning is a connection between an Award and a Recipient.

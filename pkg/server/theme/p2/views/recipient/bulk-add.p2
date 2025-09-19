@@ -1,0 +1,16 @@
+{% extends "../../base.p2" %}
+
+{% block title %}Bulk Add Recipients{% endblock %}
+
+{% block content %}
+<div class="flex-container flex-row flex-center">
+  <div class="flex-item flex-max foreground box">
+    <form method="post" enctype="multipart/form-data">
+      <label for="recipients_file">Recipients CSV</label>
+      <input type="file" name="recipients_file" id="recipients_file" accept="text/csv" />
+      <br />
+      <input type="submit" />
+    </form>
+  </div>
+</div>
+{% endblock %}
