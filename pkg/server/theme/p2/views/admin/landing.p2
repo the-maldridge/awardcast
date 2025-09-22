@@ -1,0 +1,5 @@
+{% extends "../../base.p2" %}
+
+{% block title %}AwardCast Admin{% endblock %}
+
+{% block content %}{% endblock %}

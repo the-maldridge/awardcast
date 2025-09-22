@@ -72,6 +72,7 @@ func New() (*Server, error) {
 	sfs, _ := fs.Sub(tfs, "static")
 	s.r.Handle("/static/*", http.StripPrefix("/static", http.FileServerFS(sfs)))
 	s.r.Route("/admin", func(r chi.Router) {
+		r.Get("/", s.uiViewAdminLanding)
 		r.Route("/award", func(r chi.Router) {
 			r.Get("/", s.uiViewAwardList)
 			r.Get("/bulk-add", s.uiViewAwardBulkForm)
@@ -120,6 +121,10 @@ func (s *Server) doTemplate(w http.ResponseWriter, r *http.Request, tmpl string,
 	if err := t.ExecuteWriter(ctx, w); err != nil {
 		s.templateErrorHandler(w, err)
 	}
+}
+
+func (s *Server) uiViewAdminLanding(w http.ResponseWriter, r *http.Request) {
+	s.doTemplate(w, r, "views/admin/landing.p2", nil)
 }
 
 func (s *Server) csvToMap(reader io.Reader) []map[string]string {
