@@ -18,6 +18,12 @@
           <a class="nav-item" href="/admin/recipient/bulk-add">Bulk Add</a>
         </div>
       </div>
+      <div class="nav-container">
+        <div class="nav-header">Win</div>
+        <div class="nav-dropdown">
+          <a class="nav-item" href="/admin/winnings/">List</a>
+        </div>
+      </div>
     </nav>
   </div>
 </div>

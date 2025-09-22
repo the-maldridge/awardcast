@@ -63,6 +63,21 @@ p {
     margin: 2em;
 }
 
+.button {
+    color: #000000;
+    display: inline-block;
+    background-color: #dddddd;
+    border-radius: 4px;
+    text-decoration: none;
+    transition: background-color 100ms linear;
+    margin: 0.25em;
+}
+
+.button:hover {
+    background-color: #eeeeee;
+    transition: background-color 100ms linear;
+}
+
 .flex-center {
     align-items: center;
     justify-content: center;

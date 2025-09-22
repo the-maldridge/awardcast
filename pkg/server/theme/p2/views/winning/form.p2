@@ -1,0 +1,25 @@
+{% extends "../../base.p2" %}
+
+{% block title %}Assign Award Winning{% endblock %}
+
+{% block content %}
+<div class="flex-container flex-row flex-center">
+  <div class="flex-item flex-max foreground box">
+    <form method="post">
+      <label for="award">Award</label>
+      <select name="award">
+        {% for award in awards %}
+        <option value="{{ award.ID }}">{{ award.DispTitle }} - {{ award.DispSub }}</option>
+        {% endfor %}
+      </select>
+      <label for="recipient">Recipient</label>
+      <select name="recipient">
+        {% for recipient in recipients %}
+        <option value="{{ recipient.ID }}">{{ recipient.Name }}</option>
+        {% endfor %}
+      </select>
+      <input type="submit" />
+    </form>
+  </div>
+</div>
+{% endblock %}

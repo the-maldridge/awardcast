@@ -1,0 +1,59 @@
+package server
+
+import (
+	"net/http"
+
+	"github.com/flosch/pongo2/v6"
+	"gorm.io/gorm/clause"
+
+	"github.com/the-maldridge/awardcast/pkg/types"
+)
+
+func (s *Server) uiViewWinningList(w http.ResponseWriter, r *http.Request) {
+	winnings := []types.Winning{}
+	res := s.d.Preload(clause.Associations).Find(&winnings)
+	if res.Error != nil {
+		s.doTemplate(w, r, "views/errors/internal.p2", pongo2.Context{"error": res.Error})
+		return
+	}
+
+	s.doTemplate(w, r, "views/winning/list.p2", pongo2.Context{"winnings": winnings})
+}
+
+func (s *Server) uiViewWinningAssignForm(w http.ResponseWriter, r *http.Request) {
+	awards := []types.Award{}
+	res := s.d.Find(&awards)
+	if res.Error != nil {
+		s.doTemplate(w, r, "views/errors/internal.p2", pongo2.Context{"error": res.Error})
+		return
+	}
+
+	recipients := []types.Recipient{}
+	res = s.d.Find(&recipients)
+	if res.Error != nil {
+		s.doTemplate(w, r, "views/errors/internal.p2", pongo2.Context{"error": res.Error})
+		return
+	}
+
+	ctx := pongo2.Context{
+		"awards":     awards,
+		"recipients": recipients,
+	}
+	s.doTemplate(w, r, "views/winning/form.p2", ctx)
+}
+
+func (s *Server) uiViewWinningAssignSubmit(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+
+	winning := types.Winning{
+		AwardID:     s.strToUint(r.FormValue("award")),
+		RecipientID: s.strToUint(r.FormValue("recipient")),
+	}
+
+	if res := s.d.Save(&winning); res.Error != nil {
+		s.doTemplate(w, r, "views/errors/internal.p2", pongo2.Context{"error": res.Error})
+		return
+	}
+
+	http.Redirect(w, r, "/admin/winnings/", http.StatusSeeOther)
+}

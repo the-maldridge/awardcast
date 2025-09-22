@@ -3,13 +3,14 @@ package server
 import (
 	"context"
 	"embed"
+	"encoding/csv"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
-	"encoding/csv"
-	"io"
+	"strconv"
 
 	"github.com/flosch/pongo2/v6"
 	"github.com/go-chi/chi/v5"
@@ -81,6 +82,11 @@ func New() (*Server, error) {
 			r.Get("/bulk-add", s.uiViewRecipientBulkForm)
 			r.Post("/bulk-add", s.uiViewRecipientBulkSubmit)
 		})
+		r.Route("/winnings", func(r chi.Router) {
+			r.Get("/", s.uiViewWinningList)
+			r.Get("/assign", s.uiViewWinningAssignForm)
+			r.Post("/assign", s.uiViewWinningAssignSubmit)
+		})
 	})
 	return s, nil
 }
@@ -140,4 +146,12 @@ func (s *Server) csvToMap(reader io.Reader) []map[string]string {
 		}
 	}
 	return rows
+}
+
+func (s *Server) strToUint(st string) uint {
+	int, err := strconv.Atoi(st)
+	if err != nil {
+		return 0
+	}
+	return uint(int)
 }
