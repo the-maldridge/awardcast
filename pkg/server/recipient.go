@@ -37,7 +37,7 @@ func (s *Server) uiViewRecipientBulkSubmit(w http.ResponseWriter, r *http.Reques
 
 	for _, recipient := range recipients {
 		res := s.d.Save(&types.Recipient{
-			Name:   recipient["Name"],
+			Name: recipient["Name"],
 		})
 		if res.Error != nil {
 			slog.Warn("Could not create recipient", "error", res.Error)

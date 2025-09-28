@@ -71,6 +71,11 @@ func New() (*Server, error) {
 	s.r.Use(middleware.Heartbeat("/-/alive"))
 	sfs, _ := fs.Sub(tfs, "static")
 	s.r.Handle("/static/*", http.StripPrefix("/static", http.FileServerFS(sfs)))
+	s.r.Route("/public", func(r chi.Router) {
+		r.Route("/winnings", func(r chi.Router) {
+			r.Get("/{id}/data", s.uiViewWinningData)
+		})
+	})
 	s.r.Route("/admin", func(r chi.Router) {
 		r.Get("/", s.uiViewAdminLanding)
 		r.Route("/award", func(r chi.Router) {

@@ -1,9 +1,11 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/flosch/pongo2/v6"
+	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm/clause"
 
 	"github.com/the-maldridge/awardcast/pkg/types"
@@ -56,4 +58,17 @@ func (s *Server) uiViewWinningAssignSubmit(w http.ResponseWriter, r *http.Reques
 	}
 
 	http.Redirect(w, r, "/admin/winnings/", http.StatusSeeOther)
+}
+
+func (s *Server) uiViewWinningData(w http.ResponseWriter, r *http.Request) {
+	win := types.Winning{}
+	res := s.d.Preload(clause.Associations).Where(&types.Winning{ID: s.strToUint(chi.URLParam(r, "id"))}).First(&win)
+	if res.Error != nil {
+		s.doTemplate(w, r, "views/errors/internal.p2", pongo2.Context{"error": res.Error})
+		return
+	}
+	if err := json.NewEncoder(w).Encode(win); err != nil {
+		w.Write([]byte(err.Error()))
+		return
+	}
 }
