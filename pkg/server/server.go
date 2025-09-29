@@ -72,6 +72,7 @@ func New() (*Server, error) {
 	sfs, _ := fs.Sub(tfs, "static")
 	s.r.Handle("/static/*", http.StripPrefix("/static", http.FileServerFS(sfs)))
 	s.r.Route("/public", func(r chi.Router) {
+		r.Get("/present", s.uiViewPresent)
 		r.Route("/winnings", func(r chi.Router) {
 			r.Get("/{id}/data", s.uiViewWinningData)
 		})
@@ -126,6 +127,10 @@ func (s *Server) doTemplate(w http.ResponseWriter, r *http.Request, tmpl string,
 	if err := t.ExecuteWriter(ctx, w); err != nil {
 		s.templateErrorHandler(w, err)
 	}
+}
+
+func (s *Server) uiViewPresent(w http.ResponseWriter, r *http.Request) {
+	s.doTemplate(w, r, "present.p2", nil)
 }
 
 func (s *Server) uiViewAdminLanding(w http.ResponseWriter, r *http.Request) {

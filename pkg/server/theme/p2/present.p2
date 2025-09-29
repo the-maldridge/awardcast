@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>AwardCast</title>
+        <link href="/static/css/theme.css" rel="stylesheet">
+        <script src="/static/js/mustache.js"></script>
+    </head>
+    <body class="award-bg">
+        <div class="grid-center">
+            <div id="award-container">Award failed to load</div>
+        </div>
+    </body>
+
+    {% verbatim %}
+    <script id="tpl-award" type="x-tmpl-mustache">
+     <div id="award" class="center">
+     <h1>{{ d.Award.DispTitle }}</h1>
+     <h2>{{ d.Award.DispSub }}</h2>
+     </div>
+     <div id="winner" class="center award-winner-stage1">
+     <h1>{{ d.Recipient.Name }}</h1>
+     </div>
+    </script>
+    {% endverbatim %}
+
+    <script>
+     const awardTemplate = document.getElementById('tpl-award').innerHTML;
+     const container = document.getElementById('award-container');
+
+     async function paintAward(winID) {
+         try {
+             const resp = await fetch('/public/winnings/' + winID + '/data');
+             const award = await resp.json();
+
+             const rendered = Mustache.render(awardTemplate, {'d': award});
+             container.innerHTML = rendered;
+         } catch (error) {
+             console.error(error.message);
+         }
+     }
+
+     async function revealWinner() {
+         document.getElementById('award').classList.add('award-shrink');
+         const winDiv = document.getElementById('winner');
+         winDiv.classList.add('award-winner-stage2');
+         setTimeout(function() {winDiv.classList.add('award-winner-stage3')}, 2000);
+     }
+
+     paintAward(1);
+     setTimeout(revealWinner, 2000);
+    </script>
+</html>

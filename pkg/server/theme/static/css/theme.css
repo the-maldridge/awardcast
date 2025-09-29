@@ -31,6 +31,23 @@ p {
     line-height: 1.2;
 }
 
+#award h1 {
+    font-size: 72pt;
+    line-height: 1.125;
+    margin-bottom: auto;
+}
+
+#award h2 {
+    font-size: 36pt;
+}
+
+#content {
+    max-width: 80%;
+    margin-top: 1em;
+    margin-left: auto;
+    margin-right: auto;
+}
+
 #logomark {
     font-weight: 800;
 }
@@ -40,11 +57,40 @@ p {
     width: 100%;
 }
 
-#content {
-    max-width: 80%;
-    margin-top: 1em;
-    margin-left: auto;
-    margin-right: auto;
+#winner {
+    font-size: 72pt;
+}
+
+.award-bg {
+    background-color: ivory;
+}
+
+.award-shrink h1 {
+    font-size: 43pt !important;
+
+    transition: font-size 1.5s ease-in-out;
+}
+
+.award-shrink h2 {
+    font-size: 28pt !important;
+
+    transition: font-size 1.5s ease-in-out;
+}
+
+.award-winner-stage1 {
+    opacity: 0;
+    max-height: 0;
+    overflow: hidden;
+}
+
+.award-winner-stage2 {
+    max-height: 1000px;
+    transition: max-height 4s ease-in-out;
+}
+
+.award-winner-stage3 {
+   opacity: 1;
+   transition: opacity 1s;
 }
 
 .background {
@@ -78,6 +124,10 @@ p {
     transition: background-color 100ms linear;
 }
 
+.center {
+    text-align: center;
+}
+
 .flex-center {
     align-items: center;
     justify-content: center;
@@ -109,6 +159,13 @@ p {
 
 .foreground {
     background-color: #f9f9f9;
+}
+
+.grid-center {
+    display: grid;
+    place-items: center;
+    height: 100%;
+    width: 100%;
 }
 
 .nav-header {
