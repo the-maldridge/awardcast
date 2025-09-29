@@ -1,52 +1,73 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <title>AwardCast</title>
-        <link href="/static/css/theme.css" rel="stylesheet">
-        <script src="/static/js/mustache.js"></script>
-    </head>
-    <body class="award-bg">
-        <div class="grid-center">
-            <div id="award-container">Award failed to load</div>
-        </div>
-    </body>
+  <head>
+    <title>AwardCast</title>
+    <link href="/static/css/theme.css" rel="stylesheet">
+    <script src="/static/js/mustache.js"></script>
+    <script src="/static/js/reconnecting-websocket.js"></script>
+  </head>
+  <body class="award-bg">
+    <div class="grid-center">
+      <div id="award-container"></div>
+    </div>
+  </body>
 
-    {% verbatim %}
-    <script id="tpl-award" type="x-tmpl-mustache">
-     <div id="award" class="center">
-     <h1>{{ d.Award.DispTitle }}</h1>
-     <h2>{{ d.Award.DispSub }}</h2>
-     </div>
-     <div id="winner" class="center award-winner-stage1">
-     <h1>{{ d.Recipient.Name }}</h1>
-     </div>
-    </script>
-    {% endverbatim %}
+  {% verbatim %}
+  <script id="tpl-award" type="x-tmpl-mustache">
+    <div id="award" class="center">
+    <h1>{{ d.Award.DispTitle }}</h1>
+    <h2>{{ d.Award.DispSub }}</h2>
+    </div>
+    <div id="winner" class="center award-winner-stage1">
+    <h1>{{ d.Recipient.Name }}</h1>
+    </div>
+  </script>
+  {% endverbatim %}
 
-    <script>
-     const awardTemplate = document.getElementById('tpl-award').innerHTML;
-     const container = document.getElementById('award-container');
+  <script>
+    const awardTemplate = document.getElementById('tpl-award').innerHTML;
+    const container = document.getElementById('award-container');
+    var ws = new ReconnectingWebSocket('ws://' + document.location.host + '/public/e');
 
-     async function paintAward(winID) {
-         try {
-             const resp = await fetch('/public/winnings/' + winID + '/data');
-             const award = await resp.json();
+    const MsgTypeLoad = 1;
+    const MsgTypeReveal = 2;
 
-             const rendered = Mustache.render(awardTemplate, {'d': award});
-             container.innerHTML = rendered;
-         } catch (error) {
-             console.error(error.message);
-         }
-     }
+    async function paintAward(winID) {
+        try {
+            const resp = await fetch('/public/winnings/' + winID + '/data');
+            const award = await resp.json();
 
-     async function revealWinner() {
-         document.getElementById('award').classList.add('award-shrink');
-         const winDiv = document.getElementById('winner');
-         winDiv.classList.add('award-winner-stage2');
-         setTimeout(function() {winDiv.classList.add('award-winner-stage3')}, 2000);
-     }
+            const rendered = Mustache.render(awardTemplate, {'d': award});
+            container.innerHTML = rendered;
+        } catch (error) {
+            console.error(error.message);
+        }
+    }
 
-     paintAward(1);
-     setTimeout(revealWinner, 2000);
-    </script>
+    async function revealWinner() {
+        document.getElementById('award').classList.add('award-shrink');
+        const winDiv = document.getElementById('winner');
+        winDiv.classList.add('award-winner-stage2');
+        setTimeout(function() {winDiv.classList.add('award-winner-stage3')}, 2000);
+    }
+
+    ws.addEventListener("message", (event) => {
+        try {
+            const msg = JSON.parse(event.data);
+
+            switch (msg.Type) {
+            case MsgTypeLoad:
+                paintAward(msg.WinID);
+                break;
+            case MsgTypeReveal:
+                revealWinner();
+                break;
+            }
+        } catch (error) {
+            console.error("Error parsing JSON:", error);
+            console.log("Received data (unparsed):", event.data);
+        }
+    });
+
+  </script>
 </html>

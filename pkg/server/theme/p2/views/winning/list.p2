@@ -19,12 +19,19 @@
         <td>{{ winning.Award.DispTitle }} - {{ winning.Award.DispSub }}</td>
         <td>{{ winning.Recipient.Name }}</td>
         <td class="flex-container flex-row flex-center">
-          <button class="flex-item button">Present</button>
-          <button class="flex-item button">Reveal</button>
+          <button class="flex-item button" id="win-{{ winning.ID }}-present">Present</button>
+          <button class="flex-item button" id="win-{{ winning.ID }}-reveal">Reveal</button>
         </td>
       </tr>
       {% endfor %}
     </table>
   </div>
 </div>
+
+<script>
+  {% for winning in winnings %}
+  document.getElementById('win-{{ winning.ID }}-present').addEventListener('click', function() { fetch('/admin/winnings/{{ winning.ID }}/present') }); 
+  document.getElementById('win-{{ winning.ID }}-reveal').addEventListener('click', function() { fetch('/admin/winnings/{{ winning.ID }}/reveal') }); 
+  {% endfor %}
+</script>
 {% endblock %}

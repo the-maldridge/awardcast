@@ -26,6 +26,7 @@ type Server struct {
 	r chi.Router
 	n *http.Server
 	d *gorm.DB
+	e *EventStream
 
 	tmpls *pongo2.TemplateSet
 }
@@ -65,6 +66,7 @@ func New() (*Server, error) {
 		r:     chi.NewRouter(),
 		n:     &http.Server{},
 		d:     d,
+		e:     newES(),
 		tmpls: pongo2.NewSet("html", pongo2.NewFSLoader(tsfs)),
 	}
 
@@ -72,6 +74,7 @@ func New() (*Server, error) {
 	sfs, _ := fs.Sub(tfs, "static")
 	s.r.Handle("/static/*", http.StripPrefix("/static", http.FileServerFS(sfs)))
 	s.r.Route("/public", func(r chi.Router) {
+		r.Get("/e", s.e.Handler)
 		r.Get("/present", s.uiViewPresent)
 		r.Route("/winnings", func(r chi.Router) {
 			r.Get("/{id}/data", s.uiViewWinningData)
@@ -93,6 +96,8 @@ func New() (*Server, error) {
 			r.Get("/", s.uiViewWinningList)
 			r.Get("/assign", s.uiViewWinningAssignForm)
 			r.Post("/assign", s.uiViewWinningAssignSubmit)
+			r.Get("/{id}/present", s.uiViewWinningPresent)
+			r.Get("/{id}/reveal", s.uiViewWinningReveal)
 		})
 	})
 	return s, nil

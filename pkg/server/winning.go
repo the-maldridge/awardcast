@@ -11,6 +11,12 @@ import (
 	"github.com/the-maldridge/awardcast/pkg/types"
 )
 
+// winningMessage is used to pass the actions to the frontend.
+type winningMessage struct {
+	Type uint
+	WinID uint
+}
+
 func (s *Server) uiViewWinningList(w http.ResponseWriter, r *http.Request) {
 	winnings := []types.Winning{}
 	res := s.d.Preload(clause.Associations).Find(&winnings)
@@ -71,4 +77,20 @@ func (s *Server) uiViewWinningData(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(err.Error()))
 		return
 	}
+}
+
+func (s *Server) uiViewWinningPresent(w http.ResponseWriter, r *http.Request) {
+	bytes, err := json.Marshal(&winningMessage{Type: 1, WinID: s.strToUint(chi.URLParam(r, "id"))})
+	if err != nil {
+		return
+	}
+	s.e.publish(bytes)
+}
+
+func (s *Server) uiViewWinningReveal(w http.ResponseWriter, r *http.Request) {
+	bytes, err := json.Marshal(&winningMessage{Type: 2})
+	if err != nil {
+		return
+	}
+	s.e.publish(bytes)
 }
