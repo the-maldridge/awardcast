@@ -77,6 +77,16 @@ p {
     transition: font-size 1.5s ease-in-out;
 }
 
+.award-container-hidden {
+    opacity: 0;
+    transition: opacity 1s;
+}
+
+.award-container-shown {
+    opacity: 1;
+    transition: opacity 1s;
+}
+
 .award-winner-stage1 {
     opacity: 0;
     max-height: 0;
