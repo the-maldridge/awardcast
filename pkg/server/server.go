@@ -101,6 +101,10 @@ func New() (*Server, error) {
 			r.Get("/clear-board", s.uiViewWinningClearBoard)
 		})
 	})
+
+	s.r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/public/present", http.StatusSeeOther)
+	})
 	return s, nil
 }
 
