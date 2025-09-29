@@ -94,3 +94,11 @@ func (s *Server) uiViewWinningReveal(w http.ResponseWriter, r *http.Request) {
 	}
 	s.e.publish(bytes)
 }
+
+func (s *Server) uiViewWinningClearBoard(w http.ResponseWriter, r *http.Request) {
+	bytes, err := json.Marshal(&winningMessage{Type: 3})
+	if err != nil {
+		return
+	}
+	s.e.publish(bytes)
+}

@@ -31,6 +31,7 @@
 
     const MsgTypeLoad = 1;
     const MsgTypeReveal = 2;
+    const MsgTypeClear = 3;
 
     async function paintAward(winID) {
         try {
@@ -62,6 +63,8 @@
             case MsgTypeReveal:
                 revealWinner();
                 break;
+            case MsgTypeClear:
+                container.innerHTML = '';
             }
         } catch (error) {
             console.error("Error parsing JSON:", error);

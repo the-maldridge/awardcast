@@ -98,6 +98,7 @@ func New() (*Server, error) {
 			r.Post("/assign", s.uiViewWinningAssignSubmit)
 			r.Get("/{id}/present", s.uiViewWinningPresent)
 			r.Get("/{id}/reveal", s.uiViewWinningReveal)
+			r.Get("/clear-board", s.uiViewWinningClearBoard)
 		})
 	})
 	return s, nil
