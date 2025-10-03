@@ -8,6 +8,9 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/the-maldridge/authware/backend/htpasswd"
+	_ "github.com/the-maldridge/authware/backend/netauth"
+
 	"github.com/the-maldridge/awardcast/pkg/server"
 )
 

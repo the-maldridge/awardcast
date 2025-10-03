@@ -15,6 +15,7 @@ import (
 	"github.com/flosch/pongo2/v6"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/the-maldridge/authware"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
@@ -62,6 +63,12 @@ func New() (*Server, error) {
 		return nil, err
 	}
 
+	basic, err := authware.NewAuth()
+	if err != nil {
+		slog.Error("Could not initialize middleware", "error", err)
+		os.Exit(2)
+	}
+
 	s := &Server{
 		r:     chi.NewRouter(),
 		n:     &http.Server{},
@@ -80,7 +87,11 @@ func New() (*Server, error) {
 			r.Get("/{id}/data", s.uiViewWinningData)
 		})
 	})
+	s.r.Get("/login", s.uiViewLoginPage)
+	s.r.Post("/login", basic.LoginFormHandler("username", "password", "/admin/"))
+	s.r.Get("/logout", basic.LogoutHandler("/"))
 	s.r.Route("/admin", func(r chi.Router) {
+		r.Use(basic.LoginHandler("/login"))
 		r.Get("/", s.uiViewAdminLanding)
 		r.Route("/award", func(r chi.Router) {
 			r.Get("/", s.uiViewAwardList)
@@ -129,6 +140,7 @@ func (s *Server) doTemplate(w http.ResponseWriter, r *http.Request, tmpl string,
 	if ctx == nil {
 		ctx = pongo2.Context{}
 	}
+	ctx["user"], _ = r.Context().Value(authware.UserKey{}).(authware.User)
 	t, err := s.tmpls.FromCache(tmpl)
 	if err != nil {
 		s.templateErrorHandler(w, err)
@@ -137,6 +149,10 @@ func (s *Server) doTemplate(w http.ResponseWriter, r *http.Request, tmpl string,
 	if err := t.ExecuteWriter(ctx, w); err != nil {
 		s.templateErrorHandler(w, err)
 	}
+}
+
+func (s *Server) uiViewLoginPage(w http.ResponseWriter, r *http.Request) {
+	s.doTemplate(w, r, "login.p2", nil)
 }
 
 func (s *Server) uiViewPresent(w http.ResponseWriter, r *http.Request) {

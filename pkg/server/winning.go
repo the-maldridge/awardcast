@@ -13,7 +13,7 @@ import (
 
 // winningMessage is used to pass the actions to the frontend.
 type winningMessage struct {
-	Type uint
+	Type  uint
 	WinID uint
 }
 

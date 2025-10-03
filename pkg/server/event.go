@@ -3,11 +3,11 @@ package server
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"sync"
 	"time"
-	"log/slog"
 
 	"github.com/coder/websocket"
 )

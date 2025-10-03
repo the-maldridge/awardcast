@@ -26,4 +26,11 @@
       </div>
     </nav>
   </div>
+  <div class="flex-item">
+    {% if user %}
+      <a href="/logout" style="text-decoration: none; color: black;">Logout ({{ user.Identity }})</a>
+    {% else %}
+      <a href="/login">Login</a>
+    {% endif %}
+  </div>
 </div>
