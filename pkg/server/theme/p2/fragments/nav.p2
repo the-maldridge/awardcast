@@ -9,6 +9,7 @@
         <div class="nav-dropdown">
           <a class="nav-item" href="/admin/award/">List</a>
           <a class="nav-item" href="/admin/award/bulk-add">Bulk Add</a>
+          <a class="nav-item" href="/admin/award/add">Add Single</a>
         </div>
       </div>
       <div class="nav-container">

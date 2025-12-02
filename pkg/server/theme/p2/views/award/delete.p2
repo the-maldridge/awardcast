@@ -1,0 +1,38 @@
+{% extends "../../base.p2" %}
+
+{% block title %}{% if award.ID >0 %}Modify{% else %}Add{% endif %} Award{% endblock %}
+
+{% block content %}
+<div class="flex-container flex-row flex-center">
+  <div class="flex-item flex-max foreground box">
+    <p>Please confirm you intend to permanently delete this award, this action cannot be undone!</p>
+    <form method="post">
+      <table>
+        <thead>
+          <tr>
+            <td>Property</td>
+            <td>Value</td>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Slug (Unique)</td>
+            <td>{{ award.Slug }}</td>
+          </tr>
+          <tr>
+            <td>Title</td>
+            <td>{{ award.DispTitle }}</td>
+          </tr>
+          <tr>
+            <td>Subtitle</td>
+            <td>{{ award.DispSub }}</td>
+          </tr>
+          <tr>
+            <td colspan="2"><input type="submit" value="Permanently Delete" /></td>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,6 +16,25 @@ import (
 )
 
 func main() {
+	logLevel := os.Getenv("LOG_LEVEL")
+	var level slog.Level
+	switch strings.ToLower(logLevel) {
+	case "debug":
+		level = slog.LevelDebug
+	case "info":
+		level = slog.LevelInfo
+	case "warn", "warning":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr,
+		&slog.HandlerOptions{Level: level}))
+	slog.SetDefault(logger)
+
 	s, err := server.New()
 	if err != nil {
 		slog.Error("Error initializing server", "error", err)

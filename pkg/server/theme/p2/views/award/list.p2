@@ -10,12 +10,19 @@
         <th>Slug</th>
         <th>Title</th>
         <th>Subtitle</th>
+        <th>Actions</th>
       </tr>
       {% for award in awards %}
       <tr>
         <td>{{ award.Slug }}</td>
         <td>{{ award.DispTitle }}</td>
         <td>{{ award.DispSub }}</td>
+        <td>
+          <div class="flex-container flex-row">
+            <a class="flex-item button" href="{{ award.ID }}/edit">Edit</a>
+            <a class="flex-item button" href="{{ award.ID }}/delete">Delete</a>
+          </div>
+        </td>
       </tr>
       {% endfor %}
     </table>

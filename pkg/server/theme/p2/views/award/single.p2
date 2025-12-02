@@ -1,0 +1,37 @@
+{% extends "../../base.p2" %}
+
+{% block title %}{% if award.ID >0 %}Modify{% else %}Add{% endif %} Award{% endblock %}
+
+{% block content %}
+<div class="flex-container flex-row flex-center">
+  <div class="flex-item flex-max foreground box">
+    <form method="post">
+      <table>
+        <thead>
+          <tr>
+            <td>Property</td>
+            <td>Value</td>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><label for="award_slug">Slug (Unique)</label></td>
+            <td><input type="string" name="award_slug" value="{{ award.Slug }}" /></td>
+          </tr>
+          <tr>
+            <td><label for="award_title">Title</label></td>
+            <td><input type="string" name="award_title" value="{{ award.DispTitle }}" /></td>
+          </tr>
+          <tr>
+            <td><label for="award_sub">Subtitle</label></td>
+            <td><input type="string" name="award_sub" value="{{ award.DispSub }}" /></td>
+          </tr>
+          <tr>
+            <td colspan="2"><input type="submit" /></td>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  </div>
+</div>
+{% endblock %}
