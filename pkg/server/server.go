@@ -121,7 +121,7 @@ func New() (*Server, error) {
 
 // Serve binds, initializes the mux, and serves forever.
 func (s *Server) Serve(bind string) error {
-	slog.Info("HTTP is starting")
+	slog.Info("HTTP is starting", "bind", bind)
 	s.n.Addr = bind
 	s.n.Handler = s.r
 	return s.n.ListenAndServe()
