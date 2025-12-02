@@ -110,6 +110,14 @@ func New() (*Server, error) {
 			r.Get("/", s.uiViewRecipientList)
 			r.Get("/bulk-add", s.uiViewRecipientBulkForm)
 			r.Post("/bulk-add", s.uiViewRecipientBulkSubmit)
+
+			r.Get("/add", s.uiViewRecipientFormSingle)
+			r.Post("/add", s.uiViewRecipientUpsert)
+
+			r.Get("/{id}/edit", s.uiViewRecipientFormSingle)
+			r.Post("/{id}/edit", s.uiViewRecipientUpsert)
+			r.Get("/{id}/delete", s.uiViewRecipientDeleteConfirm)
+			r.Post("/{id}/delete", s.uiViewRecipientDelete)
 		})
 		r.Route("/winnings", func(r chi.Router) {
 			r.Get("/", s.uiViewWinningList)

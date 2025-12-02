@@ -1,0 +1,13 @@
+{% extends "../../base.p2" %}
+
+{% block title %}Delete Recipient{% endblock %}
+
+{% block content %}
+<div class="flex-container flex-row flex-center">
+  <div class="flex-item flex-max foreground box">
+    <p>Please confirm that you intend to permanently delete this recipient.  This action cannot be undone!</p>
+    <p>Recipient Name: {{ recipient.Name }}.</p>
+    <form method="post"><input type="submit" value="Permanently Delete" /></form>
+  </div>
+</div>
+{% endblock %}

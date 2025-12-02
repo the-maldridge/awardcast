@@ -1,0 +1,16 @@
+{% extends "../../base.p2" %}
+
+{% block title %}{% recipient.ID > %}Modify{% else %}Add{% endif %} Recipients{% endblock %}
+
+{% block content %}
+<div class="flex-container flex-row flex-center">
+  <div class="flex-item flex-max foreground box">
+    <form method="post">
+      <label for="recipient_name">Name</label>
+      <input type="string" name="recipient_name" value="{{ recipient.Name }}" />
+      <br />
+      <input type="submit" />
+    </form>
+  </div>
+</div>
+{% endblock %}

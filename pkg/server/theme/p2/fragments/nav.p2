@@ -17,6 +17,7 @@
         <div class="nav-dropdown">
           <a class="nav-item" href="/admin/recipient/">List</a>
           <a class="nav-item" href="/admin/recipient/bulk-add">Bulk Add</a>
+          <a class="nav-item" href="/admin/recipient/add">Add Single</a>
         </div>
       </div>
       <div class="nav-container">

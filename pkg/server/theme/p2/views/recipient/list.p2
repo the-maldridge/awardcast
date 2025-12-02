@@ -8,10 +8,17 @@
     <table>
       <tr>
         <th>Name</th>
+        <th>Actions</th>
       </tr>
       {% for recipient in recipients %}
       <tr>
         <td>{{ recipient.Name }}</td>
+        <td>
+          <div class="flex-container flex-row">
+            <a class="flex-item button" href="{{ recipient.ID }}/edit">Edit</a>
+            <a class="flex-item button" href="{{ recipient.ID }}/delete">Delete</a>
+          </div>
+        </td>
       </tr>
       {% endfor %}
     </table>
