@@ -66,6 +66,25 @@ func (s *Server) uiViewWinningAssignSubmit(w http.ResponseWriter, r *http.Reques
 	http.Redirect(w, r, "/admin/winnings/", http.StatusSeeOther)
 }
 
+func (s *Server) uiViewWinningDeleteConfirm(w http.ResponseWriter, r *http.Request) {
+	id := s.strToUint(chi.URLParam(r, "id"))
+	winning := types.Winning{}
+	if res := s.d.Preload(clause.Associations).Where(&types.Winning{ID: id}).Find(&winning); res.Error != nil {
+		s.doTemplate(w, r, "views/errors/internal.p2", pongo2.Context{"error": res.Error})
+		return
+	}
+	s.doTemplate(w, r, "views/winning/delete.p2", pongo2.Context{"winning": winning})
+}
+
+func (s *Server) uiViewWinningDelete(w http.ResponseWriter, r *http.Request) {
+	id := s.strToUint(chi.URLParam(r, "id"))
+	if res := s.d.Where(&types.Winning{ID: id}).Delete(&types.Winning{}); res.Error != nil {
+		s.doTemplate(w, r, "views/errors/internal.p2", pongo2.Context{"error": res.Error})
+		return
+	}
+	http.Redirect(w, r, "/admin/winnings/", http.StatusSeeOther)
+}
+
 func (s *Server) uiViewWinningData(w http.ResponseWriter, r *http.Request) {
 	win := types.Winning{}
 	res := s.d.Preload(clause.Associations).Where(&types.Winning{ID: s.strToUint(chi.URLParam(r, "id"))}).First(&win)

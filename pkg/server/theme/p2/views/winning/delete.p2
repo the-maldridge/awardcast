@@ -1,0 +1,13 @@
+{% extends "../../base.p2" %}
+
+{% block title %}Delete Winning{% endblock %}
+
+{% block content %}
+<div class="flex-container flex-row flex-center">
+  <div class="flex-item flex-max foreground box">
+    <p>Please confirm that you intend to permanently delete this winning.  This action cannot be undone!</p>
+    <p>Winning ({{ winning.Award.DispTitle }} - {{ winning.Award.DispSub }}) won by {{ winning.Recipient.Name }}.</p>
+    <form method="post"><input type="submit" value="Permanently Delete" /></form>
+  </div>
+</div>
+{% endblock %}
