@@ -79,7 +79,7 @@ func (s *Server) uiViewRecipientFormSingle(w http.ResponseWriter, r *http.Reques
 	id := s.strToUint(chi.URLParam(r, "id"))
 	recipient := types.Recipient{}
 	slog.Debug("recipient id", "id", id)
-	if res := s.d.Where(&types.Recipient{ID: id}).Find(&recipient); res.Error != nil && !errors.Is(res.Error, gorm.ErrRecordNotFound) {
+	if res := s.d.Where("id = ?", id).Find(&recipient); res.Error != nil && !errors.Is(res.Error, gorm.ErrRecordNotFound) {
 		slog.Warn("Error processing recipient", "error", res.Error)
 		s.doTemplate(w, r, "errors/request.p2", pongo2.Context{"error": res.Error})
 		return

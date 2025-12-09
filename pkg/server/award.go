@@ -81,7 +81,7 @@ func (s *Server) uiViewAwardFormSingle(w http.ResponseWriter, r *http.Request) {
 	id := s.strToUint(chi.URLParam(r, "id"))
 	award := types.Award{}
 	slog.Debug("award id", "id", id)
-	if res := s.d.Where(&types.Award{ID: id}).Find(&award); res.Error != nil && !errors.Is(res.Error, gorm.ErrRecordNotFound) {
+	if res := s.d.Where("id = ?", id).Find(&award); res.Error != nil && !errors.Is(res.Error, gorm.ErrRecordNotFound) {
 		slog.Warn("Error processing award", "error", res.Error)
 		s.doTemplate(w, r, "errors/request.p2", pongo2.Context{"error": res.Error})
 		return
