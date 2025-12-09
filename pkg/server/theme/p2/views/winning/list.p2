@@ -11,12 +11,14 @@
         </div>
         <table>
             <tr>
+                <th>Slug</th>
                 <th>Award</th>
                 <th>Winner</th>
                 <th>Actions</th>
             </tr>
             {% for winning in winnings %}
             <tr>
+                <td>{{ winning.Award.Slug }}</td>
                 <td>{{ winning.Award.DispTitle }} - {{ winning.Award.DispSub }}</td>
                 <td>{{ winning.Recipient.Name }}</td>
                 <td class="flex-container flex-row flex-center">

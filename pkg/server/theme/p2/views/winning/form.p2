@@ -9,7 +9,7 @@
       <label for="award">Award</label>
       <select name="award">
         {% for award in awards %}
-        <option value="{{ award.ID }}">{{ award.DispTitle }} - {{ award.DispSub }}</option>
+        <option value="{{ award.ID }}">({{ award.Slug }}) {{ award.DispTitle }} - {{ award.DispSub }}</option>
         {% endfor %}
       </select>
       <label for="recipient">Recipient</label>
