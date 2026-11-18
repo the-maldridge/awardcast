@@ -1,38 +1,55 @@
-{% extends "../../base.p2" %}
+{% extends "@core/base.p2" %}
 
-{% block title %}{% if award.ID >0 %}Modify{% else %}Add{% endif %} Award{% endblock %}
+{% comment %}
+  Delete an award.
+
+  A confirmation page rather than a delete-on-click link, because removing an
+  award takes the winnings that named it with it, and the person clicking needs
+  to see which award that is before committing. The form posts to the same path;
+  the id is in the URL and nowhere else.
+{% endcomment %}
+
+{% block title %}Delete award · {{ siteTitle|default:"AwardCast" }}{% endblock %}
 
 {% block content %}
-<div class="flex-container flex-row flex-center">
-  <div class="flex-item flex-max foreground box">
-    <p>Please confirm you intend to permanently delete this award, this action cannot be undone!</p>
-    <form method="post">
-      <table>
-        <thead>
-          <tr>
-            <td>Property</td>
-            <td>Value</td>
-          </tr>
-        </thead>
+<div class="columns is-centered">
+  <div class="column is-two-thirds-tablet is-half-desktop">
+    <div class="box">
+      <h1 class="title is-4">Delete award</h1>
+
+      <div class="notification is-warning is-light">
+        This cannot be undone. Any winning that named this award is deleted with it.
+      </div>
+
+      <table class="table is-fullwidth">
         <tbody>
           <tr>
-            <td>Slug (Unique)</td>
-            <td>{{ award.Slug }}</td>
+            <th>Slug</th>
+            <td><code>{{ award.Slug }}</code></td>
           </tr>
           <tr>
-            <td>Title</td>
+            <th>Title</th>
             <td>{{ award.DispTitle }}</td>
           </tr>
           <tr>
-            <td>Subtitle</td>
-            <td>{{ award.DispSub }}</td>
-          </tr>
-          <tr>
-            <td colspan="2"><input type="submit" value="Permanently Delete" /></td>
+            <th>Subtitle</th>
+            <td>{{ award.DispSub|default:"&mdash;" }}</td>
           </tr>
         </tbody>
       </table>
-    </form>
+
+      <form method="post">
+        {{ csrfInput }}
+        <div class="field is-grouped">
+          <div class="control">
+            <button type="submit" class="button is-danger">Permanently delete</button>
+          </div>
+          <div class="control">
+            <a class="button is-light" href="/admin/award/">Cancel</a>
+          </div>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 {% endblock %}

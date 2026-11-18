@@ -1,13 +1,40 @@
-{% extends "../../base.p2" %}
+{% extends "@core/base.p2" %}
 
-{% block title %}Delete Recipient{% endblock %}
+{% comment %}
+  Delete a recipient.
+
+  Named twice over in the prompt: the confirmation has to say who is about to
+  disappear, and it has to say that their winnings go with them.
+{% endcomment %}
+
+{% block title %}Delete recipient · {{ siteTitle|default:"AwardCast" }}{% endblock %}
 
 {% block content %}
-<div class="flex-container flex-row flex-center">
-  <div class="flex-item flex-max foreground box">
-    <p>Please confirm that you intend to permanently delete this recipient.  This action cannot be undone!</p>
-    <p>Recipient Name: {{ recipient.Name }}.</p>
-    <form method="post"><input type="submit" value="Permanently Delete" /></form>
+<div class="columns is-centered">
+  <div class="column is-two-thirds-tablet is-half-desktop">
+    <div class="box">
+      <h1 class="title is-4">Delete recipient</h1>
+
+      <div class="notification is-warning is-light">
+        This cannot be undone. Any winning that named this recipient is deleted with them.
+      </div>
+
+      <p>
+        Recipient: <strong>{{ recipient.Name }}</strong>
+      </p>
+
+      <form method="post">
+        {{ csrfInput }}
+        <div class="field is-grouped">
+          <div class="control">
+            <button type="submit" class="button is-danger">Permanently delete</button>
+          </div>
+          <div class="control">
+            <a class="button is-light" href="/admin/recipient/">Cancel</a>
+          </div>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 {% endblock %}

@@ -1,0 +1,93 @@
+/*
+  Presenter screen only.
+
+  The admin pages are styled by the Bulma theme the framework serves, but the
+  projected award screen is deliberately not a Bulma page: it has no navbar, no
+  footer, and no container, and its whole job is to set two sizes of type on a
+  blank background and animate them. Sharing a stylesheet with the admin
+  interface would mean the projector repaints whenever the admin markup changes,
+  so these rules live here and are loaded by nothing else.
+*/
+
+html, body {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    margin: 0;
+}
+
+#award h1 {
+    font-size: 72pt;
+    line-height: 1.125;
+    margin-bottom: auto;
+}
+
+#award h2 {
+    font-size: 36pt;
+}
+
+#winner {
+    font-size: 72pt;
+}
+
+.award-bg {
+    background-color: ivory;
+}
+
+/*
+
+  The reveal is three steps the JavaScript applies in order, with the timing
+  carried entirely by transitions rather than by animation keyframes: the award
+  title shrinks, the winner's name grows into the space below it, and only then
+  does it become opaque. Each rule below is one step, and the stage classes are
+  additive, so the order the script adds them in is the order they take effect.
+
+*/
+.award-shrink h1 {
+    font-size: 43pt !important;
+
+    transition: font-size 1.5s ease-in-out;
+}
+
+.award-shrink h2 {
+    font-size: 28pt !important;
+
+    transition: font-size 1.5s ease-in-out;
+}
+
+.award-container-hidden {
+    opacity: 0;
+    transition: opacity 1s;
+}
+
+.award-container-shown {
+    opacity: 1;
+    transition: opacity 1s;
+}
+
+.award-winner-stage1 {
+    opacity: 0;
+    max-height: 0;
+    overflow: hidden;
+}
+
+.award-winner-stage2 {
+    max-height: 1000px;
+    transition: max-height 4s ease-in-out;
+}
+
+.award-winner-stage3 {
+   opacity: 1;
+   transition: opacity 1s;
+}
+
+.center {
+    text-align: center;
+}
+
+.grid-center {
+    display: grid;
+    place-items: center;
+    height: 100%;
+    width: 100%;
+}

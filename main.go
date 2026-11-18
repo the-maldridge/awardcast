@@ -1,73 +1,43 @@
 package main
 
 import (
-	"context"
 	"log/slog"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
-	"time"
-
-	_ "github.com/the-maldridge/authware/backend/htpasswd"
-	_ "github.com/the-maldridge/authware/backend/netauth"
 
 	"github.com/the-maldridge/awardcast/pkg/server"
 )
 
 func main() {
-	logLevel := os.Getenv("LOG_LEVEL")
-	var level slog.Level
-	switch strings.ToLower(logLevel) {
-	case "debug":
-		level = slog.LevelDebug
-	case "info":
-		level = slog.LevelInfo
-	case "warn", "warning":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo
+	slog.SetDefault(logger())
+
+	if err := run(); err != nil {
+		slog.Error("Fatal error", "error", err)
+		os.Exit(1)
 	}
+}
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr,
-		&slog.HandlerOptions{Level: level}))
-	slog.SetDefault(logger)
-
-	s, err := server.New()
+// run builds the application and blocks in it until the process is asked to
+// stop. The framework owns the signal handling and the graceful drain, so a
+// shutdown that runs out of time is reported by the framework rather than by a
+// second implementation here.
+func run() error {
+	app, err := server.New()
 	if err != nil {
-		slog.Error("Error initializing server", "error", err)
-		return
+		return err
 	}
-	serverCtx, serverStopCtx := context.WithCancel(context.Background())
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-	go func() {
-		<-sig
+	defer app.Close()
 
-		shutdownCtx, _ := context.WithTimeout(serverCtx, 30*time.Second)
+	return app.Run()
+}
 
-		go func() {
-			<-shutdownCtx.Done()
-			if shutdownCtx.Err() == context.DeadlineExceeded {
-				slog.Error("Graceful shutdown timed out.. forcing exit.")
-				os.Exit(5)
-			}
-		}()
-
-		err := s.Shutdown(shutdownCtx)
-		if err != nil {
-			slog.Error("Error occured during shutdown", "error", err)
-		}
-		serverStopCtx()
-
-	}()
-
-	bind := os.Getenv("AWARD_ADDR")
-	if bind == "" {
-		bind = ":1323"
+// logger builds the process logger from LOG_LEVEL. The application falls back
+// to this logger when nothing is passed to webapp.WithLogger.
+func logger() *slog.Logger {
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(strings.ToLower(os.Getenv("LOG_LEVEL")))); err != nil {
+		level = slog.LevelInfo
 	}
-	s.Serve(bind)
-	<-serverCtx.Done()
+
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 }

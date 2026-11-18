@@ -1,80 +1,119 @@
+{% comment %}
+  The presenter screen.
+
+  Deliberately not a theme page: the shared layout would put a navbar, a footer,
+  and a sign-out button on the thing the room is looking at. This document is a
+  blank background, two sizes of type, and the script that moves them, and it is
+  styled by its own stylesheet for exactly that reason.
+
+  The socket URL follows the page's own protocol rather than hard-wiring ws://.
+  A page served over https asking for ws:// is blocked outright by the browser,
+  which is the failure that appears only on the day somebody puts this behind
+  TLS, which is the day nobody can afford to debug it.
+{% endcomment %}
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AwardCast</title>
-    <link href="/static/css/theme.css" rel="stylesheet">
-    <script src="/static/js/mustache.js"></script>
-    <script src="/static/js/reconnecting-websocket.js"></script>
+    <link rel="stylesheet" href="/static/awards/present.css">
+    <script src="/static/awards/mustache.js"></script>
+    <script src="/static/awards/reconnecting-websocket.js"></script>
   </head>
   <body class="award-bg">
     <div class="grid-center">
       <div id="award-container"></div>
     </div>
-  </body>
 
-  {% verbatim %}
-  <script id="tpl-award" type="x-tmpl-mustache">
-    <div id="award" class="center">
-    <h1>{{ d.Award.DispTitle }}</h1>
-    <h2>{{ d.Award.DispSub }}</h2>
-    </div>
-    <div id="winner" class="center award-winner-stage1">
-    <h1>{{ d.Recipient.Name }}</h1>
-    </div>
-  </script>
-  {% endverbatim %}
+    {% verbatim %}
+    <script id="tpl-award" type="x-tmpl-mustache">
+      <div id="award" class="center">
+        <h1>{{ d.Award.DispTitle }}</h1>
+        <h2>{{ d.Award.DispSub }}</h2>
+      </div>
+      <div id="winner" class="center award-winner-stage1">
+        <h1>{{ d.Recipient.Name }}</h1>
+      </div>
+    </script>
+    {% endverbatim %}
 
-  <script>
-    const awardTemplate = document.getElementById('tpl-award').innerHTML;
-    const container = document.getElementById('award-container');
-    var ws = new ReconnectingWebSocket('ws://' + document.location.host + '/public/e');
+    <script>
+      // The three numbers are the wire format shared with the server, defined as
+      // msgTypeLoad, msgTypeReveal, and msgTypeClear in winning.go. Nothing
+      // checks that the two agree, so changing one side means changing the other.
+      const MsgTypeLoad = 1;
+      const MsgTypeReveal = 2;
+      const MsgTypeClear = 3;
 
-    const MsgTypeLoad = 1;
-    const MsgTypeReveal = 2;
-    const MsgTypeClear = 3;
+      const awardTemplate = document.getElementById('tpl-award').innerHTML;
+      const container = document.getElementById('award-container');
 
-    async function paintAward(winID) {
+      const socketURL = (location.protocol === 'https:' ? 'wss://' : 'ws://')
+        + document.location.host + '/public/e';
+      const ws = new ReconnectingWebSocket(socketURL);
+
+      async function paintAward(winID) {
         try {
-            container.classList.remove('award-container-shown');
-            const resp = await fetch('/public/winnings/' + winID + '/data');
-            const award = await resp.json();
+          const resp = await fetch('/public/winnings/' + winID + '/data');
+          if (!resp.ok) {
+            console.error('Could not load winning ' + winID + ': HTTP ' + resp.status);
+            return;
+          }
+          const award = await resp.json();
 
-            const rendered = Mustache.render(awardTemplate, {'d': award});
-            container.classList.add('award-container-hidden');
-            container.innerHTML = rendered;
+          // Fade out, swap, fade in. Removing both classes and forcing a reflow
+          // is what lets the second transition actually run; adding only the
+          // "shown" class onto an element that never dropped "hidden" leaves the
+          // element stuck at whichever rule the stylesheet happened to reach last.
+          container.classList.remove('award-container-shown', 'award-container-hidden');
+          void container.offsetWidth;
+          container.classList.add('award-container-hidden');
+          container.innerHTML = Mustache.render(awardTemplate, { 'd': award });
+          requestAnimationFrame(function () {
             container.classList.add('award-container-shown');
+          });
         } catch (error) {
-            console.error(error.message);
+          console.error(error.message);
         }
-    }
+      }
 
-    async function revealWinner() {
-        document.getElementById('award').classList.add('award-shrink');
+      function revealWinner() {
+        const awardDiv = document.getElementById('award');
+        if (!awardDiv) { return; }
+        awardDiv.classList.add('award-shrink');
+
         const winDiv = document.getElementById('winner');
+        if (!winDiv) { return; }
         winDiv.classList.add('award-winner-stage2');
-        setTimeout(function() {winDiv.classList.add('award-winner-stage3')}, 2000);
-    }
+        setTimeout(function () { winDiv.classList.add('award-winner-stage3'); }, 2000);
+      }
 
-    ws.addEventListener("message", (event) => {
+      function clearBoard() {
+        container.classList.remove('award-container-shown');
+        setTimeout(function () { container.innerHTML = ''; }, 2000);
+      }
+
+      ws.addEventListener('message', function (event) {
         try {
-            const msg = JSON.parse(event.data);
+          const msg = JSON.parse(event.data);
 
-            switch (msg.Type) {
+          switch (msg.Type) {
             case MsgTypeLoad:
-                paintAward(msg.WinID);
-                break;
+              paintAward(msg.WinID);
+              break;
             case MsgTypeReveal:
-                revealWinner();
-                break;
+              revealWinner();
+              break;
             case MsgTypeClear:
-                container.classList.remove('award-container-shown');
-                setTimeout(function() { container.innerHTML = ''}, 2000);
-            }
+              clearBoard();
+              break;
+          }
         } catch (error) {
-            console.error("Error parsing JSON:", error);
-            console.log("Received data (unparsed):", event.data);
+          console.error('Error parsing JSON:', error);
+          console.log('Received data (unparsed):', event.data);
         }
-    });
-
-  </script>
+      });
+    </script>
+  </body>
 </html>

@@ -1,16 +1,76 @@
-{% extends "../../base.p2" %}
+{% extends "@core/base.p2" %}
 
-{% block title %}Award List{% endblock %}
+{% comment %}
+  Bulk-import awards from a CSV.
+
+  A file that cannot be parsed is bounced back whole with the row number that
+  broke it, rather than importing up to that row and stopping. A file that parses
+  but holds a duplicate slug imports what it could and lists the rows it could
+  not place, so the notification here says "some rows" rather than "nothing" and
+  never claims an outcome the handler did not perform.
+{% endcomment %}
+
+{% block title %}Import awards · {{ siteTitle|default:"AwardCast" }}{% endblock %}
 
 {% block content %}
-<div class="flex-container flex-row flex-center">
-  <div class="flex-item flex-max foreground box">
-    <form method="post" enctype="multipart/form-data">
-      <label for="awards_file">Awards CSV</label>
-      <input type="file" name="awards_file" id="awards_file" accept="text/csv" />
-      <br />
-      <input type="submit" />
-    </form>
+<div class="columns is-centered">
+  <div class="column is-two-thirds-tablet is-half-desktop">
+    <div class="box">
+      <h1 class="title is-4">Import awards</h1>
+
+      {% if rejected %}
+      <div class="notification is-danger is-light" role="alert">
+        <ul class="ml-4">
+          {% for reason in rejected %}
+          <li>{{ reason }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      <form method="post" enctype="multipart/form-data">
+        {{ csrfInput }}
+
+        <div class="file has-name is-fullwidth">
+          <label class="file-label">
+            <input class="file-input" type="file" id="awards_file" name="awards_file"
+                   accept="text/csv,.csv" required>
+            <span class="file-cta">
+              <span class="file-label">Choose a CSV</span>
+            </span>
+            <span class="file-name" id="awards_file_name">No file selected</span>
+          </label>
+        </div>
+
+        <div class="field mt-4">
+          <div class="control">
+            <button type="submit" class="button is-primary">Import</button>
+          </div>
+        </div>
+      </form>
+
+      <hr>
+
+      <p class="is-size-7 has-text-grey">
+        The first row is the header, and columns are matched by name exactly as
+        written here: <code>Slug</code> (required, unique), <code>Title</code>,
+        <code>Subtitle</code>. A row whose length disagrees with the header
+        rejects the whole file.
+      </p>
+    </div>
   </div>
 </div>
+
+<script>
+  // Bulma styles the file control but does not fill in the chosen name, and
+  // without it the page gives no sign the browser accepted a file at all.
+  (function () {
+    var input = document.getElementById('awards_file');
+    var name = document.getElementById('awards_file_name');
+    if (!input || !name) { return; }
+    input.addEventListener('change', function () {
+      name.textContent = input.files.length ? input.files[0].name : 'No file selected';
+    });
+  })();
+</script>
 {% endblock %}

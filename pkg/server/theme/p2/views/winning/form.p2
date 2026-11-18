@@ -1,25 +1,76 @@
-{% extends "../../base.p2" %}
+{% extends "@core/base.p2" %}
 
-{% block title %}Assign Award Winning{% endblock %}
+{% comment %}
+  Assign a winner: pick one award and one recipient.
+
+  Both pickers are populated from the whole table, so the page is worth rendering
+  at all only when both have entries; the empty case says what to go and import
+  rather than offering a select nobody can submit.
+{% endcomment %}
+
+{% block title %}Assign a winner · {{ siteTitle|default:"AwardCast" }}{% endblock %}
 
 {% block content %}
-<div class="flex-container flex-row flex-center">
-  <div class="flex-item flex-max foreground box">
-    <form method="post">
-      <label for="award">Award</label>
-      <select name="award">
-        {% for award in awards %}
-        <option value="{{ award.ID }}">({{ award.Slug }}) {{ award.DispTitle }} - {{ award.DispSub }}</option>
-        {% endfor %}
-      </select>
-      <label for="recipient">Recipient</label>
-      <select name="recipient">
-        {% for recipient in recipients %}
-        <option value="{{ recipient.ID }}">{{ recipient.Name }}</option>
-        {% endfor %}
-      </select>
-      <input type="submit" />
-    </form>
+<div class="columns is-centered">
+  <div class="column is-two-thirds-tablet is-half-desktop">
+    <div class="box">
+      <h1 class="title is-4">Assign a winner</h1>
+
+      {% if rejected %}
+      <div class="notification is-danger is-light" role="alert">
+        <ul class="ml-4">
+          {% for reason in rejected %}
+          <li>{{ reason }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if awards and recipients %}
+      <form method="post">
+        {{ csrfInput }}
+
+        <div class="field">
+          <label class="label" for="award">Award</label>
+          <div class="select is-fullwidth">
+            <select id="award" name="award">
+              {% for award in awards %}
+              <option value="{{ award.ID }}">
+                ({{ award.Slug }}) {{ award.DispTitle }}{% if award.DispSub %} &middot; {{ award.DispSub }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="label" for="recipient">Recipient</label>
+          <div class="select is-fullwidth">
+            <select id="recipient" name="recipient">
+              {% for recipient in recipients %}
+              <option value="{{ recipient.ID }}">{{ recipient.Name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="field is-grouped">
+          <div class="control">
+            <button type="submit" class="button is-primary">Assign</button>
+          </div>
+          <div class="control">
+            <a class="button is-light" href="/admin/winnings/">Cancel</a>
+          </div>
+        </div>
+      </form>
+      {% else %}
+      <div class="notification is-warning is-light">
+        Assigning needs at least one award and one recipient.
+        {% if not awards %}<a href="/admin/award/bulk-add">Import awards</a>.{% endif %}
+        {% if not recipients %}<a href="/admin/recipient/bulk-add">Import recipients</a>.{% endif %}
+      </div>
+      {% endif %}
+    </div>
   </div>
 </div>
 {% endblock %}

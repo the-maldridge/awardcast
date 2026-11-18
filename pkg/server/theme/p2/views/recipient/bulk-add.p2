@@ -1,16 +1,71 @@
-{% extends "../../base.p2" %}
+{% extends "@core/base.p2" %}
 
-{% block title %}Bulk Add Recipients{% endblock %}
+{% comment %}
+  Bulk-import recipients from a CSV.
+
+  One column, one file. The notification area exists because names collide:
+  a roster exported twice, or a person spelled two ways that turn out to be the
+  same after someone has already fixed it by hand.
+{% endcomment %}
+
+{% block title %}Import recipients · {{ siteTitle|default:"AwardCast" }}{% endblock %}
 
 {% block content %}
-<div class="flex-container flex-row flex-center">
-  <div class="flex-item flex-max foreground box">
-    <form method="post" enctype="multipart/form-data">
-      <label for="recipients_file">Recipients CSV</label>
-      <input type="file" name="recipients_file" id="recipients_file" accept="text/csv" />
-      <br />
-      <input type="submit" />
-    </form>
+<div class="columns is-centered">
+  <div class="column is-two-thirds-tablet is-half-desktop">
+    <div class="box">
+      <h1 class="title is-4">Import recipients</h1>
+
+      {% if rejected %}
+      <div class="notification is-danger is-light" role="alert">
+        <ul class="ml-4">
+          {% for reason in rejected %}
+          <li>{{ reason }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      <form method="post" enctype="multipart/form-data">
+        {{ csrfInput }}
+
+        <div class="file has-name is-fullwidth">
+          <label class="file-label">
+            <input class="file-input" type="file" id="recipients_file" name="recipients_file"
+                   accept="text/csv,.csv" required>
+            <span class="file-cta">
+              <span class="file-label">Choose a CSV</span>
+            </span>
+            <span class="file-name" id="recipients_file_name">No file selected</span>
+          </label>
+        </div>
+
+        <div class="field mt-4">
+          <div class="control">
+            <button type="submit" class="button is-primary">Import</button>
+          </div>
+        </div>
+      </form>
+
+      <hr>
+
+      <p class="is-size-7 has-text-grey">
+        The first row is the header and must read exactly <code>Name</code>.
+        A row whose length disagrees with the header rejects the whole file.
+      </p>
+    </div>
   </div>
 </div>
+
+<script>
+  // Bulma styles the file control but does not fill in the chosen name.
+  (function () {
+    var input = document.getElementById('recipients_file');
+    var name = document.getElementById('recipients_file_name');
+    if (!input || !name) { return; }
+    input.addEventListener('change', function () {
+      name.textContent = input.files.length ? input.files[0].name : 'No file selected';
+    });
+  })();
+</script>
 {% endblock %}

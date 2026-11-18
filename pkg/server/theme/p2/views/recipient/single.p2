@@ -1,16 +1,55 @@
-{% extends "../../base.p2" %}
+{% extends "@core/base.p2" %}
 
-{% block title %}{% recipient.ID > %}Modify{% else %}Add{% endif %} Recipients{% endblock %}
+{% comment %}
+  One recipient, added or edited.
+
+  The id lives in the URL on the edit path and is absent on the add path, which
+  is the same contract the award form uses and why one handler can tell "new"
+  from "the path said abc".
+{% endcomment %}
+
+{% block title %}{% if recipient.ID %}Edit recipient{% else %}Add recipient{% endif %} · {{ siteTitle|default:"AwardCast" }}{% endblock %}
 
 {% block content %}
-<div class="flex-container flex-row flex-center">
-  <div class="flex-item flex-max foreground box">
-    <form method="post">
-      <label for="recipient_name">Name</label>
-      <input type="string" name="recipient_name" value="{{ recipient.Name }}" />
-      <br />
-      <input type="submit" />
-    </form>
+<div class="columns is-centered">
+  <div class="column is-two-thirds-tablet is-half-desktop">
+    <div class="box">
+      <h1 class="title is-4">{% if recipient.ID %}Edit recipient{% else %}Add recipient{% endif %}</h1>
+
+      {% if rejected %}
+      <div class="notification is-danger is-light" role="alert">
+        <ul class="ml-4">
+          {% for reason in rejected %}
+          <li>{{ reason }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      <form method="post">
+        {{ csrfInput }}
+
+        <div class="field">
+          <label class="label" for="recipient_name">Name</label>
+          <div class="control">
+            <input class="input" type="text" id="recipient_name" name="recipient_name"
+                   value="{{ recipient.Name }}" required maxlength="255">
+          </div>
+          <p class="help">Must be unique. Two spellings of the same person read as two winners.</p>
+        </div>
+
+        <div class="field is-grouped">
+          <div class="control">
+            <button type="submit" class="button is-primary">
+              {% if recipient.ID %}Save{% else %}Add{% endif %}
+            </button>
+          </div>
+          <div class="control">
+            <a class="button is-light" href="/admin/recipient/">Cancel</a>
+          </div>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 {% endblock %}

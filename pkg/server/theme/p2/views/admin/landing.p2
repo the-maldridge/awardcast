@@ -1,5 +1,56 @@
-{% extends "../../base.p2" %}
+{% extends "@core/base.p2" %}
 
-{% block title %}AwardCast Admin{% endblock %}
+{% comment %}
+  Admin landing page.
 
-{% block content %}{% endblock %}
+  Every admin screen is already one click away in the navbar, so this page is
+  not the navigation. It is the running order: get awards in, get recipients in,
+  pair them, then drive the projector. The three boxes are in that order rather
+  than alphabetically, because the import steps have to happen first and this is
+  the page somebody sees when they arrive on setup day and nothing works yet.
+{% endcomment %}
+
+{% block title %}Admin · {{ siteTitle|default:"AwardCast" }}{% endblock %}
+
+{% block content %}
+<div class="box">
+  <h1 class="title is-4">AwardCast</h1>
+  <p class="subtitle is-6 mb-0">Awards and recipients in, winners on the projector.</p>
+</div>
+
+<div class="columns">
+  <div class="column">
+    <div class="box">
+      <h2 class="title is-5">Awards</h2>
+      <p>What can be won. Import a CSV or enter one by hand.</p>
+      <div class="buttons">
+        <a class="button is-small" href="/admin/award/">List</a>
+        <a class="button is-small" href="/admin/award/add">Add</a>
+        <a class="button is-small" href="/admin/award/bulk-add">Import CSV</a>
+      </div>
+    </div>
+  </div>
+  <div class="column">
+    <div class="box">
+      <h2 class="title is-5">Recipients</h2>
+      <p>Who can win. Names are unique, so deduplicate before importing.</p>
+      <div class="buttons">
+        <a class="button is-small" href="/admin/recipient/">List</a>
+        <a class="button is-small" href="/admin/recipient/add">Add</a>
+        <a class="button is-small" href="/admin/recipient/bulk-add">Import CSV</a>
+      </div>
+    </div>
+  </div>
+  <div class="column">
+    <div class="box">
+      <h2 class="title is-5">Winners</h2>
+      <p>Pair an award with a recipient, then present and reveal on the screen.</p>
+      <div class="buttons">
+        <a class="button is-small" href="/admin/winnings/">List</a>
+        <a class="button is-small is-primary" href="/admin/winnings/assign">Assign</a>
+        <a class="button is-small is-info" href="/public/present" target="_blank" rel="noopener">Presenter</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

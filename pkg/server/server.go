@@ -1,216 +1,467 @@
+// Package server contains the award show's HTTP application: the admin
+// screens a producer drives the ceremony from, the presenter page the room
+// watches, and the WebSocket stream that connects a click in one to the other.
 package server
 
 import (
-	"context"
 	"embed"
-	"encoding/csv"
 	"fmt"
-	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
-	"strconv"
+	"strings"
+	"time"
 
-	"github.com/flosch/pongo2/v6"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/the-maldridge/authware"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
+	"github.com/the-maldridge/authware/backend/htpasswd"
+	"github.com/the-maldridge/authware/backend/netauth"
+	"github.com/the-maldridge/webapp"
+	"github.com/the-maldridge/webapp/auth"
+	"github.com/the-maldridge/webapp/db"
+
+	// The Bulma theme registers itself from its init and owns every layout
+	// block the admin screens extend.
+	_ "github.com/the-maldridge/webapp-bulma"
 
 	"github.com/the-maldridge/awardcast/pkg/types"
 )
 
-// Server contains the awards server and its associated machinery.
-type Server struct {
-	r chi.Router
-	n *http.Server
-	d *gorm.DB
-	e *EventStream
+const (
+	// envPrefix namespaces the environment variables the framework reads, so
+	// that a host running several of these never shares a database or a
+	// session with another.
+	envPrefix = "AWARDCAST"
 
-	tmpls *pongo2.TemplateSet
+	// templatesNS is where this application's own pages are mounted. "core"
+	// belongs to the active theme and "dev" to the debug overlay, so the
+	// application needs a namespace of its own.
+	templatesNS = "awardcast"
+
+	// staticPath serves the presenter's assets. The theme owns /static/core,
+	// so the application's files live under their own prefix.
+	staticPath = "/static/awards"
+
+	// envThemeDir replaces the compiled-in templates with a directory on disk,
+	// which is how a title gets fixed during a rehearsal without a rebuild.
+	//
+	// It used to be AWARDCAST_DEBUG. That name now belongs to the framework,
+	// which parses <PREFIX>_DEBUG as a boolean and treats a path in it as a
+	// startup error.
+	envThemeDir = "AWARDCAST_THEME_DIR"
+
+	// envSessionKey and envMechs are authware's names for the session signing
+	// key and the colon-separated password backend list, kept so an existing
+	// deployment keeps working unchanged.
+	envSessionKey = "AUTHWARE_SESSION_KEY"
+	envMechs      = "AUTHWARE_BASIC_MECHS"
+
+	// defaultAddr is the address awardcast has always listened on.
+	defaultAddr = ":1323"
+
+	// defaultMech is the password backend used when none are named, matching
+	// what authware defaulted to.
+	defaultMech = "htpasswd"
+
+	// maxUploadBytes bounds a request body. Bulk CSV uploads are POSTs, and
+	// the framework caps a body at a megabyte by default, which is smaller
+	// than the member list of any convention worth supporting.
+	maxUploadBytes = 16 << 20
+
+	// socketTimeout bounds the presenter's connection. Accepting a WebSocket
+	// hijacks the connection, and a hijacked connection keeps the read deadline
+	// the server set before the handler ran: coder/websocket never clears it.
+	// Under the framework's 30 second default the presenter would therefore
+	// drop its socket twice a minute, reconnect, and miss whatever was clicked
+	// in between, so the timeout is set past the length of any ceremony.
+	// It can be lowered again per deployment with AWARDCAST_READ_TIMEOUT and
+	// AWARDCAST_WRITE_TIMEOUT.
+	socketTimeout = 24 * time.Hour
+)
+
+// The environment names this application defaults rather than fixes. They are
+// the framework's own names, spelled out so that defaulting one is visibly the
+// same setting an operator would override.
+const (
+	envAddr         = envPrefix + "_ADDR"
+	envReadTimeout  = envPrefix + "_READ_TIMEOUT"
+	envWriteTimeout = envPrefix + "_WRITE_TIMEOUT"
+)
+
+// defaultIfUnset returns the deployment's value for name, or fallback when the
+// environment did not name it.
+//
+// This is how an application offers a default without making a variable inert:
+// the framework fills a configuration field from the environment only when no
+// option claimed it, so passing our own number unconditionally would mean an
+// operator setting the variable changes nothing, and nothing says so.
+func defaultIfUnset(name, fallback string) string {
+	if v, ok := os.LookupEnv(name); ok {
+		return v
+	}
+	return fallback
 }
 
 //go:embed theme
-var efs embed.FS
+var assets embed.FS
 
-func New() (*Server, error) {
-	var tfs fs.FS
-	tfs, _ = fs.Sub(efs, "theme")
-	if path, ok := os.LookupEnv("AWARDCAST_DEBUG"); ok {
-		slog.Info("Debug mode enabled")
-		tfs = os.DirFS(path)
-	}
-	tsfs, _ := fs.Sub(tfs, "p2")
+// ui is the handler set. It carries the application so every handler reaches
+// the database, the renderer, and the redirect helpers through one receiver,
+// and the event stream, which is the only piece of state the application has
+// that the framework knows nothing about.
+type ui struct {
+	*webapp.App
 
-	dbPath := os.Getenv("AWARDCAST_DB")
-	if dbPath == "" {
-		dbPath = "award.db"
-	}
-	d, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	auth   *auth.Service
+	stream *EventStream
+	static fs.FS
+}
+
+// New builds the application. Options are applied after the application's own,
+// so a caller can override the database, the templates, or the environment
+// prefix and inherit everything else.
+func New(opts ...webapp.Option) (*webapp.App, error) {
+	base, err := Options()
 	if err != nil {
 		return nil, err
 	}
 
-	err = d.AutoMigrate(
-		&types.Award{},
-		&types.Image{},
-		&types.Recipient{},
-		&types.Winning{},
+	runtime, err := runtimeOptions()
+	if err != nil {
+		return nil, err
+	}
+
+	app, err := webapp.New(append(base, runtime...)...)
+	if err != nil {
+		return nil, err
+	}
+	if err := Install(app); err != nil {
+		_ = app.Close()
+		return nil, err
+	}
+	return app, nil
+}
+
+// Options returns what the framework has to be told before the application is
+// built: this application's template namespace, its models, and the body cap a
+// bulk upload needs.
+//
+// It is exported so a test can build an application on a temporary database
+// with webapptest and then hand it to Install. Deliberately absent are the
+// listening address, the environment prefix, and the timeouts, all of which a
+// harness wants to keep its own answer for; those are in runtimeOptions.
+func Options() ([]webapp.Option, error) {
+	pages, _, err := theme()
+	if err != nil {
+		return nil, err
+	}
+
+	options := []webapp.Option{
+		webapp.WithTheme("bulma"),
+		webapp.WithSiteTitle("AwardCast"),
+		webapp.WithTemplates(templatesNS, pages),
+		// Image has no screen of its own yet. Its table is still registered so
+		// that a database written by an older version is never rewritten out
+		// from under somebody.
+		webapp.WithDBOptions(db.WithAutoMigrate(
+			&types.Award{},
+			&types.Image{},
+			&types.Recipient{},
+			&types.Winning{},
+		)),
+		// The framework caps a request body at a megabyte by default, which is
+		// smaller than the member list of any convention worth supporting, and
+		// bulk import is a feature rather than a tunable. The cap is therefore
+		// set here rather than defaulted, and <PREFIX>_MAX_BODY_BYTES is not
+		// consulted.
+		webapp.WithMaxBodyBytes(maxUploadBytes),
+	}
+
+	return options, nil
+}
+
+// runtimeOptions are the deployment settings that a constructed application
+// needs and a test harness does not want overridden.
+func runtimeOptions() ([]webapp.Option, error) {
+	t, err := timeouts()
+	if err != nil {
+		return nil, err
+	}
+
+	return []webapp.Option{
+		webapp.WithEnvPrefix(envPrefix),
+		webapp.WithAddr(defaultIfUnset(envAddr, defaultAddr)),
+		// The presenter holds a WebSocket for the length of a ceremony, and a
+		// hijacked connection keeps the server's deadlines. See socketTimeout
+		// and timeouts.
+		webapp.WithTimeouts(t),
+	}, nil
+}
+
+// timeouts are the server deadlines, raised from the framework's 30 and 45
+// second defaults because the presenter's socket would otherwise drop twice a
+// minute. See socketTimeout.
+//
+// The two environment variables are read here rather than left to the
+// framework, because WithTimeouts has to be called to raise the defaults at
+// all, and the framework only consults the environment for a field no option
+// claimed. Parsing them here keeps a deployment's AWARDCAST_READ_TIMEOUT from
+// being silently ignored. The idle timeout stays at the framework's default: it
+// bounds keep-alive between requests, which a hijacked connection has none of.
+func timeouts() (webapp.Timeouts, error) {
+	t := webapp.Timeouts{ReadTimeout: socketTimeout, WriteTimeout: socketTimeout}
+
+	for _, field := range []struct {
+		name   string
+		target *time.Duration
+	}{
+		{envReadTimeout, &t.ReadTimeout},
+		{envWriteTimeout, &t.WriteTimeout},
+	} {
+		raw, ok := os.LookupEnv(field.name)
+		if !ok {
+			continue
+		}
+		d, err := time.ParseDuration(strings.TrimSpace(raw))
+		if err != nil {
+			return t, fmt.Errorf("%s: %w", field.name, err)
+		}
+		*field.target = d
+	}
+	return t, nil
+}
+
+// Install mounts this application's screens onto app: the identity service, the
+// navbar entries, the route table, and the presenter's static files.
+//
+// It is separate from New because templates can only be mounted while an
+// application is being built, whereas routes, nav, and authentication all need
+// an application to attach to. A test therefore passes Options() to a harness of
+// its own and calls this; the binary does both in one go.
+//
+// An application that already has an identity service keeps it. That is what
+// lets a test install a service with a known session key and a local account
+// backend, rather than depending on the .htpasswd file in whoever's working
+// directory the test happens to run from.
+func Install(app *webapp.App) error {
+	_, static, err := theme()
+	if err != nil {
+		return err
+	}
+
+	svc := app.AuthService()
+	if svc == nil {
+		if svc, err = installAuth(app); err != nil {
+			return err
+		}
+	}
+
+	u := &ui{App: app, auth: svc, stream: newES(), static: static}
+	u.registerNav()
+	u.registerRoutes()
+	return nil
+}
+
+// theme returns the page templates and the static assets. The pages come from
+// the binary unless envThemeDir names a directory to read them from instead.
+func theme() (pages fs.FS, static fs.FS, err error) {
+	if dir, ok := os.LookupEnv(envThemeDir); ok {
+		slog.Info("Serving templates from disk", "dir", dir)
+		pages = os.DirFS(dir)
+	} else if pages, err = fs.Sub(assets, "theme/p2"); err != nil {
+		return nil, nil, fmt.Errorf("template dir: %w", err)
+	}
+
+	if static, err = fs.Sub(assets, "theme/static"); err != nil {
+		return nil, nil, fmt.Errorf("static dir: %w", err)
+	}
+	return pages, static, nil
+}
+
+// installAuth builds the authentication service over the application's own
+// database and wires it in.
+//
+// The order is the only one available: the database is opened by webapp.New, so
+// a service that needs it is built afterwards, and its tables have to be part
+// of the schema before the first request, which is what RegisterComponent is
+// for. Neither auth.New nor InstallAuth migrates anything on its own.
+func installAuth(app *webapp.App) (*auth.Service, error) {
+	mechs, err := mechanisms()
+	if err != nil {
+		return nil, err
+	}
+
+	svc, err := auth.New(app.DB,
+		auth.WithSessionKey(os.Getenv(envSessionKey)),
+		auth.WithOnlyMechanisms(mechs...),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("auth service: %w", err)
+	}
+	if err := app.RegisterComponent(svc); err != nil {
+		return nil, fmt.Errorf("auth tables: %w", err)
+	}
+	if err := app.InstallAuth(svc); err != nil {
+		return nil, fmt.Errorf("install auth: %w", err)
 	}
 
-	basic, err := authware.NewAuth()
+	// InstallAuth names the session cookie after the environment prefix. This
+	// application predates that and issued authware's plain name, so the name
+	// is put back: an upgrade should not sign out whoever is already signed in.
+	err = svc.SetCookiePolicy(auth.CookiePolicy{
+		Name:     auth.DefaultCookieName,
+		Secure:   app.Config.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
+		Lifetime: svc.SessionLifetime(),
+	})
 	if err != nil {
-		slog.Error("Could not initialize middleware", "error", err)
-		os.Exit(2)
+		return nil, fmt.Errorf("session cookie: %w", err)
 	}
-
-	s := &Server{
-		r:     chi.NewRouter(),
-		n:     &http.Server{},
-		d:     d,
-		e:     newES(),
-		tmpls: pongo2.NewSet("html", pongo2.NewFSLoader(tsfs)),
-	}
-
-	s.r.Use(middleware.Heartbeat("/-/alive"))
-	sfs, _ := fs.Sub(tfs, "static")
-	s.r.Handle("/static/*", http.StripPrefix("/static", http.FileServerFS(sfs)))
-	s.r.Route("/public", func(r chi.Router) {
-		r.Get("/e", s.e.Handler)
-		r.Get("/present", s.uiViewPresent)
-		r.Route("/winnings", func(r chi.Router) {
-			r.Get("/{id}/data", s.uiViewWinningData)
-		})
-	})
-	s.r.Get("/login", s.uiViewLoginPage)
-	s.r.Post("/login", basic.LoginFormHandler("username", "password", "/admin/"))
-	s.r.Get("/logout", basic.LogoutHandler("/"))
-	s.r.Route("/admin", func(r chi.Router) {
-		r.Use(basic.LoginHandler("/login"))
-		r.Get("/", s.uiViewAdminLanding)
-		r.Route("/award", func(r chi.Router) {
-			r.Get("/", s.uiViewAwardList)
-			r.Get("/bulk-add", s.uiViewAwardBulkForm)
-			r.Post("/bulk-add", s.uiViewAwardBulkSubmit)
-
-			r.Get("/add", s.uiViewAwardFormSingle)
-			r.Post("/add", s.uiViewAwardUpsert)
-
-			r.Get("/{id}/edit", s.uiViewAwardFormSingle)
-			r.Post("/{id}/edit", s.uiViewAwardUpsert)
-			r.Get("/{id}/delete", s.uiViewAwardDeleteConfirm)
-			r.Post("/{id}/delete", s.uiViewAwardDelete)
-		})
-		r.Route("/recipient", func(r chi.Router) {
-			r.Get("/", s.uiViewRecipientList)
-			r.Get("/bulk-add", s.uiViewRecipientBulkForm)
-			r.Post("/bulk-add", s.uiViewRecipientBulkSubmit)
-
-			r.Get("/add", s.uiViewRecipientFormSingle)
-			r.Post("/add", s.uiViewRecipientUpsert)
-
-			r.Get("/{id}/edit", s.uiViewRecipientFormSingle)
-			r.Post("/{id}/edit", s.uiViewRecipientUpsert)
-			r.Get("/{id}/delete", s.uiViewRecipientDeleteConfirm)
-			r.Post("/{id}/delete", s.uiViewRecipientDelete)
-		})
-		r.Route("/winnings", func(r chi.Router) {
-			r.Get("/", s.uiViewWinningList)
-			r.Get("/assign", s.uiViewWinningAssignForm)
-			r.Post("/assign", s.uiViewWinningAssignSubmit)
-			r.Get("/{id}/present", s.uiViewWinningPresent)
-			r.Get("/{id}/reveal", s.uiViewWinningReveal)
-			r.Get("/{id}/delete", s.uiViewWinningDeleteConfirm)
-			r.Post("/{id}/delete", s.uiViewWinningDelete)
-			r.Get("/clear-board", s.uiViewWinningClearBoard)
-		})
-	})
-
-	s.r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/public/present", http.StatusSeeOther)
-	})
-	return s, nil
+	return svc, nil
 }
 
-// Serve binds, initializes the mux, and serves forever.
-func (s *Server) Serve(bind string) error {
-	slog.Info("HTTP is starting", "bind", bind)
-	s.n.Addr = bind
-	s.n.Handler = s.r
-	return s.n.ListenAndServe()
-}
-
-// Shutdown requests the underlying server gracefully cease operation.
-func (s *Server) Shutdown(ctx context.Context) error {
-	return s.n.Shutdown(ctx)
-}
-
-func (s *Server) templateErrorHandler(w http.ResponseWriter, err error) {
-	fmt.Fprintf(w, "Error while rendering template: %s\n", err)
-}
-
-func (s *Server) doTemplate(w http.ResponseWriter, r *http.Request, tmpl string, ctx pongo2.Context) {
-	if ctx == nil {
-		ctx = pongo2.Context{}
-	}
-	ctx["user"], _ = r.Context().Value(authware.UserKey{}).(authware.User)
-	t, err := s.tmpls.FromCache(tmpl)
-	if err != nil {
-		s.templateErrorHandler(w, err)
-		return
-	}
-	if err := t.ExecuteWriter(ctx, w); err != nil {
-		s.templateErrorHandler(w, err)
-	}
-}
-
-func (s *Server) uiViewLoginPage(w http.ResponseWriter, r *http.Request) {
-	s.doTemplate(w, r, "login.p2", nil)
-}
-
-func (s *Server) uiViewPresent(w http.ResponseWriter, r *http.Request) {
-	s.doTemplate(w, r, "present.p2", nil)
-}
-
-func (s *Server) uiViewAdminLanding(w http.ResponseWriter, r *http.Request) {
-	s.doTemplate(w, r, "views/admin/landing.p2", nil)
-}
-
-func (s *Server) csvToMap(reader io.Reader) []map[string]string {
-	r := csv.NewReader(reader)
-	rows := []map[string]string{}
-	var header []string
-	for {
-		record, err := r.Read()
-		if err == io.EOF {
-			break
+// mechanisms resolves the password backends named by AUTHWARE_BASIC_MECHS,
+// which is the same colon-separated list of factory names authware's own
+// middleware read. It defaults to htpasswd over the .htpasswd and .htgroup
+// files in the working directory.
+func mechanisms() ([]auth.Mechanism, error) {
+	var names []string
+	for _, name := range strings.Split(os.Getenv(envMechs), ":") {
+		if name != "" {
+			names = append(names, name)
 		}
+	}
+	if len(names) == 0 {
+		names = []string{defaultMech}
+	}
+
+	factories := map[string]func() (auth.Mechanism, error){
+		defaultMech: htpasswd.New,
+		"netauth":   netauth.New,
+	}
+
+	mechs := make([]auth.Mechanism, 0, len(names))
+	for _, name := range names {
+		factory, ok := factories[name]
+		if !ok {
+			return nil, fmt.Errorf("auth mechanism %q: unknown, expected %q or %q",
+				name, defaultMech, "netauth")
+		}
+		m, err := factory()
 		if err != nil {
-			slog.Error("Error decoding CSV", "error", err)
-			return nil
+			return nil, fmt.Errorf("auth mechanism %q: %w", name, err)
 		}
-		if header == nil {
-			header = record
-		} else {
-			dict := map[string]string{}
-			for i := range header {
-				dict[header[i]] = record[i]
-			}
-			rows = append(rows, dict)
-		}
+		mechs = append(mechs, m)
 	}
-	return rows
+	return mechs, nil
 }
 
-func (s *Server) strToUint(st string) uint {
-	int, err := strconv.Atoi(st)
-	if err != nil {
-		return 0
-	}
-	return uint(int)
+// registerNav publishes the admin screens to the theme's navbar.
+//
+// Everything lives under /admin, and the theme decides which item is active by
+// comparing the first path segment of a link with the first segment of the
+// request, so several top-level items would all light up at once. One parent
+// with children keeps exactly one thing highlighted, and the children need no
+// gate of their own: every route behind them already refuses an anonymous
+// request.
+func (u *ui) registerNav() {
+	u.Nav(webapp.NavItem{
+		Weight: 10,
+		Label:  "Admin",
+		Href:   "/admin/",
+		Children: []webapp.NavItem{
+			{Label: "Awards", Href: "/admin/award/"},
+			{Label: "Add an award", Href: "/admin/award/add"},
+			{Label: "Import awards from CSV", Href: "/admin/award/bulk-add"},
+			{Label: "Recipients", Href: "/admin/recipient/"},
+			{Label: "Add a recipient", Href: "/admin/recipient/add"},
+			{Label: "Import recipients from CSV", Href: "/admin/recipient/bulk-add"},
+			{Label: "Winnings", Href: "/admin/winnings/"},
+			{Label: "Assign a winner", Href: "/admin/winnings/assign"},
+		},
+	})
+}
+
+// registerRoutes is the whole route table. Public paths are unchanged from the
+// version this replaced, so a saved presenter bookmark still lands.
+func (u *ui) registerRoutes() {
+	// The root of the site is the screen the room is watching.
+	u.HandleErr("/", func(w http.ResponseWriter, r *http.Request) error {
+		u.SeeOther(w, r, "/public/present")
+		return nil
+	})
+
+	// The presenter page is driven by the event stream and fetches the details
+	// of one winning at a time. None of it carries a session: routes are open
+	// unless wrapped in a guard, so these are left unguarded deliberately, and
+	// the block comment above is the record of that decision.
+	u.Route("/public", func(r webapp.Router) {
+		r.Get("/e", r.Public(u.stream.Handler))
+		r.GetErr("/present", u.uiViewPresent)
+		r.Route("/winnings", func(r webapp.Router) {
+			r.GetErr("/{id}/data", u.uiViewWinningData)
+		})
+	})
+
+	// The theme's sign-in link points at /login and its form posts to it too,
+	// so one pattern serves both halves. The auth package's submit handler
+	// answers anything but POST with 403 and an Allow header.
+	u.HandleErr("/login", u.uiViewLogin)
+
+	// Sign-out is POST-only, which is why the GET /logout of the previous
+	// version is gone; the theme's navbar posts to this path.
+	u.Handle("/logout", u.auth.LogoutHandler("/"))
+
+	// Presenter assets: the vendored mustache and reconnecting WebSocket
+	// libraries and the stylesheet the award animation lives in.
+	u.Mount(staticPath, http.StripPrefix(staticPath, http.FileServerFS(u.static)))
+
+	u.Route("/admin", func(r webapp.Router) {
+		// Every screen behind here needs an identity. Which identities exist,
+		// and what groups each is in, is the htpasswd file's answer for now.
+		r.Use(u.auth.RequireLogin())
+
+		r.GetErr("/", u.uiViewAdminLanding)
+
+		r.Route("/award", func(r webapp.Router) {
+			r.GetErr("/", u.uiViewAwardList)
+			r.GetErr("/bulk-add", u.uiViewAwardBulkForm)
+			r.PostErr("/bulk-add", u.uiViewAwardBulkSubmit)
+
+			r.GetErr("/add", u.uiViewAwardFormSingle)
+			r.PostErr("/add", u.uiViewAwardUpsert)
+
+			r.GetErr("/{id}/edit", u.uiViewAwardFormSingle)
+			r.PostErr("/{id}/edit", u.uiViewAwardUpsert)
+			r.GetErr("/{id}/delete", u.uiViewAwardDeleteConfirm)
+			r.PostErr("/{id}/delete", u.uiViewAwardDelete)
+		})
+
+		r.Route("/recipient", func(r webapp.Router) {
+			r.GetErr("/", u.uiViewRecipientList)
+			r.GetErr("/bulk-add", u.uiViewRecipientBulkForm)
+			r.PostErr("/bulk-add", u.uiViewRecipientBulkSubmit)
+
+			r.GetErr("/add", u.uiViewRecipientFormSingle)
+			r.PostErr("/add", u.uiViewRecipientUpsert)
+
+			r.GetErr("/{id}/edit", u.uiViewRecipientFormSingle)
+			r.PostErr("/{id}/edit", u.uiViewRecipientUpsert)
+			r.GetErr("/{id}/delete", u.uiViewRecipientDeleteConfirm)
+			r.PostErr("/{id}/delete", u.uiViewRecipientDelete)
+		})
+
+		r.Route("/winnings", func(r webapp.Router) {
+			r.GetErr("/", u.uiViewWinningList)
+			r.GetErr("/assign", u.uiViewWinningAssignForm)
+			r.PostErr("/assign", u.uiViewWinningAssignSubmit)
+			r.GetErr("/clear-board", u.uiViewWinningClearBoard)
+
+			// Present and reveal are GETs: they change nothing on the server,
+			// they only tell the presenter screen what to do next.
+			r.GetErr("/{id}/present", u.uiViewWinningPresent)
+			r.GetErr("/{id}/reveal", u.uiViewWinningReveal)
+			r.GetErr("/{id}/delete", u.uiViewWinningDeleteConfirm)
+			r.PostErr("/{id}/delete", u.uiViewWinningDelete)
+		})
+	})
 }

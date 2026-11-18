@@ -1,27 +1,54 @@
-{% extends "../../base.p2" %}
+{% extends "@core/base.p2" %}
 
-{% block title %}Recipient List{% endblock %}
+{% comment %}
+  Recipient list.
+
+  One column: a recipient is a name. The value of the page is seeing the whole
+  roster at once and reaching edit or delete for one of them.
+{% endcomment %}
+
+{% block title %}Recipients · {{ siteTitle|default:"AwardCast" }}{% endblock %}
 
 {% block content %}
-<div class="flex-container flex-row flex-center">
-  <div class="flex-item flex-max foreground box">
-    <table>
+<div class="box">
+  <div class="level">
+    <div class="level-left">
+      <h1 class="title is-4 mb-0">Recipients</h1>
+    </div>
+    <div class="level-right">
+      <div class="buttons">
+        <a class="button is-small" href="/admin/recipient/add">Add a recipient</a>
+        <a class="button is-small" href="/admin/recipient/bulk-add">Import CSV</a>
+      </div>
+    </div>
+  </div>
+
+  <table class="table is-fullwidth is-striped is-hoverable">
+    <thead>
       <tr>
         <th>Name</th>
-        <th>Actions</th>
+        <th class="has-text-right">Actions</th>
       </tr>
+    </thead>
+    <tbody>
       {% for recipient in recipients %}
       <tr>
         <td>{{ recipient.Name }}</td>
-        <td>
-          <div class="flex-container flex-row">
-            <a class="flex-item button" href="{{ recipient.ID }}/edit">Edit</a>
-            <a class="flex-item button" href="{{ recipient.ID }}/delete">Delete</a>
-          </div>
+        <td class="has-text-right">
+          <a class="button is-small" href="{{ recipient.ID }}/edit">Edit</a>
+          <a class="button is-small is-light is-danger" href="{{ recipient.ID }}/delete">Delete</a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="2" class="has-text-grey">
+          No recipients yet.
+          <a href="/admin/recipient/bulk-add">Import a CSV</a>
+          or <a href="/admin/recipient/add">add one by hand</a>.
         </td>
       </tr>
       {% endfor %}
-    </table>
-  </div>
+    </tbody>
+  </table>
 </div>
 {% endblock %}

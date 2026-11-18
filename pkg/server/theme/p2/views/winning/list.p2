@@ -1,42 +1,101 @@
-{% extends "../../base.p2" %}
+{% extends "@core/base.p2" %}
 
-{% block title %}Win List{% endblock %}
+{% comment %}
+  Winning list, and the remote control for the projector.
+
+  Present, reveal, and clear-board change nothing in the database: they publish
+  an event that the presenter screen acts on. That is why they are GETs, and why
+  a click can be a plain fetch with no form and no confirmation. It also means
+  the buttons below are the only part of this page that can fail silently, so
+  the handler reports a failed publish rather than leaving the operator assuming
+  the screen moved.
+
+  One delegated listener covers every row rather than one per row: the old page
+  emitted an inline script block per winning, which meant the page's script grew
+  with the roster and could not be attached before the rows existed.
+{% endcomment %}
+
+{% block title %}Winners · {{ siteTitle|default:"AwardCast" }}{% endblock %}
 
 {% block content %}
-<div class="flex-container flex-row flex-center">
-    <div class="flex-item flex-max foreground box">
-        <div class="flex-container flex-row flex-center">
-            <a class="flex-item button" href="/admin/winnings/assign">Assign</a>
-            <button class="flex-item button" id="clear-board">Clear Board</button>
-        </div>
-        <table>
-            <tr>
-                <th>Slug</th>
-                <th>Award</th>
-                <th>Winner</th>
-                <th>Actions</th>
-            </tr>
-            {% for winning in winnings %}
-            <tr>
-                <td>{{ winning.Award.Slug }}</td>
-                <td>{{ winning.Award.DispTitle }} - {{ winning.Award.DispSub }}</td>
-                <td>{{ winning.Recipient.Name }}</td>
-                <td class="flex-container flex-row flex-center">
-                    <button class="flex-item button" id="win-{{ winning.ID }}-present">Present</button>
-                    <button class="flex-item button" id="win-{{ winning.ID }}-reveal">Reveal</button>
-                    <a class="flex-item button" href="{{ winning.ID }}/delete">Delete</a>
-                </td>
-            </tr>
-            {% endfor %}
-        </table>
+<div class="box">
+  <div class="level">
+    <div class="level-left">
+      <h1 class="title is-4 mb-0">Winners</h1>
     </div>
+    <div class="level-right">
+      <div class="buttons">
+        <a class="button is-small is-primary" href="/admin/winnings/assign">Assign a winner</a>
+        <button type="button" class="button is-small" data-action="/admin/winnings/clear-board">Clear board</button>
+        <a class="button is-small is-info" href="/public/present" target="_blank" rel="noopener">Presenter</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="notification is-danger is-light is-hidden" id="board-error" role="alert"></div>
+
+  <table class="table is-fullwidth is-striped is-hoverable">
+    <thead>
+      <tr>
+        <th>Slug</th>
+        <th>Award</th>
+        <th>Winner</th>
+        <th class="has-text-right">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="winning-rows">
+      {% for winning in winnings %}
+      <tr>
+        <td><code>{{ winning.Award.Slug }}</code></td>
+        <td>{{ winning.Award.DispTitle }}{% if winning.Award.DispSub %} &middot; {{ winning.Award.DispSub }}{% endif %}</td>
+        <td>{{ winning.Recipient.Name }}</td>
+        <td class="has-text-right">
+          <button type="button" class="button is-small"
+                  data-action="/admin/winnings/{{ winning.ID }}/present">Present</button>
+          <button type="button" class="button is-small is-link"
+                  data-action="/admin/winnings/{{ winning.ID }}/reveal">Reveal</button>
+          <a class="button is-small is-light is-danger" href="{{ winning.ID }}/delete">Delete</a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="4" class="has-text-grey">
+          Nothing assigned yet. <a href="/admin/winnings/assign">Assign a winner</a>.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
 
 <script>
- document.getElementById('clear-board').addEventListener('click', function() { fetch('/admin/winnings/clear-board') });
- {% for winning in winnings %}
- document.getElementById('win-{{ winning.ID }}-present').addEventListener('click', function() { fetch('/admin/winnings/{{ winning.ID }}/present') });
- document.getElementById('win-{{ winning.ID }}-reveal').addEventListener('click', function() { fetch('/admin/winnings/{{ winning.ID }}/reveal') });
- {% endfor %}
+  (function () {
+    var banner = document.getElementById('board-error');
+
+    function showFailure(message) {
+      banner.textContent = message;
+      banner.classList.remove('is-hidden');
+    }
+
+    function clearFailure() {
+      banner.classList.add('is-hidden');
+    }
+
+    document.addEventListener('click', function (event) {
+      var button = event.target.closest('button[data-action]');
+      if (!button) { return; }
+
+      clearFailure();
+      fetch(button.dataset.action)
+        .then(function (response) {
+          if (!response.ok) {
+            showFailure('The presenter did not receive that command (HTTP ' + response.status + ').');
+          }
+        })
+        .catch(function (error) {
+          showFailure('The presenter did not receive that command: ' + error.message);
+        });
+    });
+  })();
 </script>
 {% endblock %}

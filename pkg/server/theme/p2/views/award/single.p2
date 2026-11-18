@@ -1,37 +1,74 @@
-{% extends "../../base.p2" %}
+{% extends "@core/base.p2" %}
 
-{% block title %}{% if award.ID >0 %}Modify{% else %}Add{% endif %} Award{% endblock %}
+{% comment %}
+  One award, added or edited.
+
+  The same template serves both, told apart by whether the record has an id.
+  The form posts to the path it was served from, which is what keeps the edit
+  case honest: the id lives in the URL rather than in a hidden field a caller
+  could point at a different award.
+{% endcomment %}
+
+{% block title %}{% if award.ID %}Edit award{% else %}Add award{% endif %} · {{ siteTitle|default:"AwardCast" }}{% endblock %}
 
 {% block content %}
-<div class="flex-container flex-row flex-center">
-  <div class="flex-item flex-max foreground box">
-    <form method="post">
-      <table>
-        <thead>
-          <tr>
-            <td>Property</td>
-            <td>Value</td>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><label for="award_slug">Slug (Unique)</label></td>
-            <td><input type="string" name="award_slug" value="{{ award.Slug }}" /></td>
-          </tr>
-          <tr>
-            <td><label for="award_title">Title</label></td>
-            <td><input type="string" name="award_title" value="{{ award.DispTitle }}" /></td>
-          </tr>
-          <tr>
-            <td><label for="award_sub">Subtitle</label></td>
-            <td><input type="string" name="award_sub" value="{{ award.DispSub }}" /></td>
-          </tr>
-          <tr>
-            <td colspan="2"><input type="submit" /></td>
-          </tr>
-        </tbody>
-      </table>
-    </form>
+<div class="columns is-centered">
+  <div class="column is-two-thirds-tablet is-half-desktop">
+    <div class="box">
+      <h1 class="title is-4">{% if award.ID %}Edit award{% else %}Add award{% endif %}</h1>
+
+      {% if rejected %}
+      <div class="notification is-danger is-light" role="alert">
+        <ul>
+          {% for reason in rejected %}
+          <li>{{ reason }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      <form method="post">
+        {{ csrfInput }}
+
+        <div class="field">
+          <label class="label" for="award_slug">Slug</label>
+          <div class="control">
+            <input class="input" type="text" id="award_slug" name="award_slug"
+                   value="{{ award.Slug }}" required maxlength="255">
+          </div>
+          <p class="help">Unique. This is the value an imported CSV row is matched on.</p>
+        </div>
+
+        <div class="field">
+          <label class="label" for="award_title">Title</label>
+          <div class="control">
+            <input class="input" type="text" id="award_title" name="award_title"
+                   value="{{ award.DispTitle }}" required maxlength="255">
+          </div>
+          <p class="help">The big line on the projector.</p>
+        </div>
+
+        <div class="field">
+          <label class="label" for="award_sub">Subtitle</label>
+          <div class="control">
+            <input class="input" type="text" id="award_sub" name="award_sub"
+                   value="{{ award.DispSub }}" maxlength="255">
+          </div>
+          <p class="help">Optional smaller line, for example the category.</p>
+        </div>
+
+        <div class="field is-grouped">
+          <div class="control">
+            <button type="submit" class="button is-primary">
+              {% if award.ID %}Save{% else %}Add{% endif %}
+            </button>
+          </div>
+          <div class="control">
+            <a class="button is-light" href="/admin/award/">Cancel</a>
+          </div>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 {% endblock %}

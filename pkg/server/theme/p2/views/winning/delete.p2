@@ -1,13 +1,46 @@
-{% extends "../../base.p2" %}
+{% extends "@core/base.p2" %}
 
-{% block title %}Delete Winning{% endblock %}
+{% comment %}
+  Delete a winning.
+
+  The pairing goes away; the award and the recipient stay. A winning already on
+  the projector stays on it until the board is cleared, which is what it always
+  did: silently emptying a screen the room is watching is the worse failure.
+{% endcomment %}
+
+{% block title %}Delete winning · {{ siteTitle|default:"AwardCast" }}{% endblock %}
 
 {% block content %}
-<div class="flex-container flex-row flex-center">
-  <div class="flex-item flex-max foreground box">
-    <p>Please confirm that you intend to permanently delete this winning.  This action cannot be undone!</p>
-    <p>Winning ({{ winning.Award.DispTitle }} - {{ winning.Award.DispSub }}) won by {{ winning.Recipient.Name }}.</p>
-    <form method="post"><input type="submit" value="Permanently Delete" /></form>
+<div class="columns is-centered">
+  <div class="column is-two-thirds-tablet is-half-desktop">
+    <div class="box">
+      <h1 class="title is-4">Delete winning</h1>
+
+      <div class="notification is-warning is-light">
+        This cannot be undone. The award and the recipient both stay; only this pairing goes.
+      </div>
+
+      <p>
+        <strong>{{ winning.Award.DispTitle }}</strong>
+        {% if winning.Award.DispSub %}
+        <span class="has-text-grey">&middot; {{ winning.Award.DispSub }}</span>
+        {% endif %}
+        <br>
+        won by <strong>{{ winning.Recipient.Name }}</strong>.
+      </p>
+
+      <form method="post">
+        {{ csrfInput }}
+        <div class="field is-grouped">
+          <div class="control">
+            <button type="submit" class="button is-danger">Permanently delete</button>
+          </div>
+          <div class="control">
+            <a class="button is-light" href="/admin/winnings/">Cancel</a>
+          </div>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 {% endblock %}
