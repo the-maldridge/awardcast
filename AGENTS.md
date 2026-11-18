@@ -1,172 +1,302 @@
 # AGENTS.md
 
 AwardCast is a self-hosted award presentation app: one Go binary with an
-authenticated admin UI for curating awards/recipients and an unauthenticated
-public "presenter" page that animates the winner on screen. Admin actions are
-relayed to the presenter over a WebSocket broadcast.
+authenticated admin UI for curating awards and recipients, and an
+unauthenticated public "presenter" page that animates the winner on screen.
+Admin actions reach the presenter over a WebSocket broadcast.
+
+It is an application built on `github.com/the-maldridge/webapp`: the framework
+owns configuration, the database handle, routing, rendering, the error funnel,
+sessions, CSRF, and the Bulma layout. AwardCast owns the models, the handlers,
+the templates under its own namespace, and the event stream.
 
 ## Commands
 
 | Task | Command |
 | --- | --- |
-| Build | `go build ./...` |
-| Run dev server | `go run .` (listens on `:1323`) |
-| Test | `go test ./...` — **no test files exist**; nothing to imitate, nothing fails |
-| Vet | `go vet ./...` — currently reports a **pre-existing** `context.WithTimeout` leak at `main.go:49`, so a clean run is not a usable signal |
+| Build | `CGO_ENABLED=1 go build ./...` |
+| Run dev server | `AUTHWARE_SESSION_KEY=devkey go run .` (listens on `:1323`) |
+| Test | `CGO_ENABLED=1 go test ./...` |
+| Format | `gofmt -l .` — must print nothing |
+| Vet | `go vet ./...` — a clean run is the expectation, and it holds |
 | Container | `docker build -t awardcast .` |
 
-CGO is mandatory: the SQLite driver (`gorm.io/driver/sqlite` →
-`mattn/go-sqlite3`) needs a C toolchain, and the Dockerfile installs
+`CGO_ENABLED=1` is required for build and test alike: the SQLite driver
+(`gorm.io/driver/sqlite` → `mattn/go-sqlite3`) is C. The Dockerfile installs
 `sqlite-dev build-base` and links with `-ldflags '-extldflags "-static"'`
 because the final image is `scratch` with `tini-static` as entrypoint.
+
+`go mod tidy` is a normal command again — `go.mod` lists its direct requires
+correctly, so tidying produces no churn.
 
 ## Running locally
 
 ```sh
-# from the repo root, templates hot-swappable from disk
-AWARDCAST_DEBUG=$PWD/pkg/server/theme go run .
+# from the repo root, so .htpasswd and .htgroup resolve
+AUTHWARE_SESSION_KEY=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n') go run .
 ```
 
-Then open `http://localhost:1323/admin/` (redirects to `/login`), and open
-`http://localhost:1323/public/present` in a second window as the display.
-A checked-in `.htpasswd` at the repo root supplies credentials for local use
-(`.htgroup` is empty); htpasswd/htgroup paths resolve relative to the process
-CWD, so run from the repo root or set the env vars below.
+Open `http://localhost:1323/admin/` for the admin UI (it answers 401 until you
+sign in at `/login`), and `http://localhost:1323/public/present` in a second
+window or on the projector.
+
+`AWARDCAST_THEME_DIR` reads the page templates from a directory instead of the
+copies compiled into the binary:
+
+```sh
+AWARDCAST_THEME_DIR=$PWD/pkg/server/theme/p2 AUTHWARE_SESSION_KEY=devkey go run .
+```
+
+The value is the **`p2` directory**, not `pkg/server/theme` and not the repo
+root. Static assets are always served from the embedded copy; only pages are
+overlaid. Templates are still compiled once at startup, so an edit needs a
+restart — this saves the Go toolchain on a deployment host, not the restart.
+
+The framework's own `WithTemplateDebug` would recompile per request, but it
+mounts the directory under a `dev` namespace, and a page name qualified
+`@awardcast/…` never resolves there. So it is not wired up, and
+`AWARDCAST_THEME_DIR` is a startup-time overlay only.
+
+The old name for this was `AWARDCAST_DEBUG`. That name now belongs to the
+framework, which parses it as a boolean and refuses to start when it is set
+alongside `AWARDCAST_PRODUCTION`. Do not put a path in it.
 
 ### Environment
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `AWARD_ADDR` | `:1323` | listen address (`main.go`) |
-| `AWARDCAST_DB` | `award.db` | SQLite path; Docker sets `/data/award.db`, so `/data` must be a volume |
-| `LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error`, slog text on stderr |
-| `AWARDCAST_DEBUG` | unset | load templates + static from disk instead of the embedded FS. **The value must be the theme directory** (`pkg/server/theme`), not the repo root: the code does `fs.Sub(tfs, "p2")` and `fs.Sub(tfs, "static")` on it |
-| `AUTHWARE_BASIC_MECHS` | `htpasswd` | `:`-separated authware backends (`htpasswd`, `netauth`, `ldap` are importable; only htpasswd and netauth are imported in `main.go`) |
-| `AUTHWARE_HTPASSWD_FILE` / `AUTHWARE_HTGROUP_FILE` | `.htpasswd` / `.htgroup` | from the authware htpasswd backend |
-| `AUTHWARE_SESSION_KEY` | unset | **indirect**: this names *another* env var whose value is the cookie key. Unset ⇒ random key ⇒ all sessions die on restart |
+| `AWARDCAST_ADDR` | `:1323` | listen address; the application only supplies this default when the variable is unset, so the environment wins |
+| `AWARDCAST_DB` | `webapp.db` | SQLite path; the Dockerfile sets `/data/award.db`, so `/data` must be a volume |
+| `AWARDCAST_THEME_DIR` | unset | serve page templates from this directory instead of the embedded copy |
+| `AWARDCAST_READ_TIMEOUT` / `AWARDCAST_WRITE_TIMEOUT` | `24h` | Go durations, read by `timeouts()` in `server.go`; a value that does not parse is a startup error naming the variable. See the socket note under **Data flow** |
+| `AWARDCAST_IDLE_TIMEOUT` | `120s`, **not consulted** | the application calls `WithTimeouts`, so the framework fills none of them from the environment; `timeouts()` reads the two above itself and leaves idle at the framework default |
+| `AWARDCAST_MAX_BODY_BYTES` | `16MiB`, **not consulted** | the cap is set unconditionally in `Options()`: bulk CSV import is a feature, not a tunable, and the framework's 1 MiB default is smaller than a member list |
+| `AWARDCAST_PRODUCTION` | unset | framework hardening: Secure cookies, no template debugging |
+| `LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error`, slog text on stderr (the one variable `main.go` reads itself) |
+| `AUTHWARE_SESSION_KEY` | unset | long random string. Unset means a random key per boot, so every restart signs everybody out |
+| `AUTHWARE_BASIC_MECHS` | `htpasswd` | `:`-separated backends; `htpasswd` and `netauth` are the two compiled in |
+| `AUTHWARE_HTPASSWD_FILE` / `AUTHWARE_HTGROUP_FILE` | `.htpasswd` / `.htgroup` | resolved against the process CWD, and **both must exist** (`.htgroup` may be empty) |
 | `AUTHWARE_SESSION_LIFETIME` | `1h` | Go duration |
 
-Health check endpoint: `GET /-/alive` (chi heartbeat, no auth).
+Health check: `GET /-/alive`, served by the framework without touching the
+database. The image is `scratch`, so there is no `HEALTHCHECK` instruction in
+the Dockerfile — probe it from the orchestrator instead.
 
 ## Layout
 
 ```
-main.go                 slog setup, signal-driven graceful shutdown (30s cap), Serve
-pkg/server/server.go    Server struct, ALL route registration, template/auth/CSV helpers
-pkg/server/award.go     admin CRUD handlers for awards
-pkg/server/recipient.go admin CRUD handlers for recipients
+main.go                 slog setup, then webapp's Run (it owns signal handling)
+pkg/server/server.go    options, Install, the whole route table, nav, auth wiring
+pkg/server/award.go     award CRUD and CSV import
+pkg/server/recipient.go recipient CRUD and CSV import
 pkg/server/winning.go   assign/list/delete winnings, presenter JSON, broadcast triggers
-pkg/server/event.go     WebSocket fan-out (EventStream), refactored from coder/websocket chat example
+pkg/server/pages.go     login, presenter, admin landing
+pkg/server/params.go    path and form id parsing
+pkg/server/csv.go       CSV reading, uploaded-file extraction
+pkg/server/event.go     WebSocket fan-out (EventStream)
 pkg/types/type.go       GORM models: Award, Image, Recipient, Winning
-pkg/server/theme/       embedded via go:embed; p2/ = pongo2 templates, static/ = css + vendored js
+pkg/server/theme/       embedded via go:embed
+  p2/                   page templates (present.p2, views/…) — no base, no nav, no login
+  static/               present.css, mustache.js, reconnecting-websocket.js
 ```
 
-`New()` in `pkg/server/server.go` is the whole route table — every handler is
-registered there and nowhere else. Schema is created by `d.AutoMigrate(...)` on
-every startup; there is no migrations directory, so a model change is picked up
-by restarting, and destructive changes require deleting the SQLite file.
-`award.db` and `test_data/` are gitignored (the CSVs in `test_data/` are the
-bulk-upload format: `Slug,Title,Subtitle` and `Name`).
+`registerRoutes` in `pkg/server/server.go` is the whole route table, and it is
+the only place a public path is named. Schema comes from `db.WithAutoMigrate`
+in `Options()`; there is no migrations directory, so a model change lands on
+restart and a destructive one means deleting the SQLite file. `award.db` and
+`test_data/` are gitignored; the CSVs in `test_data/` are the bulk-upload
+format (`Slug,Title,Subtitle` and `Name`).
+
+### Building an application: New, Options, Install
+
+Templates can only be mounted while an application is constructed, but routes,
+nav, and authentication all need a constructed application to attach to. The
+split is therefore:
+
+- `Options()` — templates, models, body cap. Safe to hand to any `webapp.New`.
+- `runtimeOptions()` (private) — env prefix, address, timeouts.
+- `Install(app)` — identity service, nav, routes, static files.
+- `New()` — all of the above, which is what `main.go` calls.
+
+Tests go through `webapptest.NewApp(t, Options()...)`, then
+`app.InstallAuth()`, then `Install(app.App)`. `Install` keeps an identity
+service the application already has, which is what lets a test use the
+harness's own account store instead of the `.htpasswd` file in whatever
+directory the tests run from.
 
 ## Data flow
 
 Two halves share one process:
 
-* `/admin/*` — cookie-authenticated, server-rendered CRUD against SQLite.
-* `/public/*` — unauthenticated: `/public/e` (WebSocket subscriber),
-  `/public/present` (self-contained display page),
-  `/public/winnings/{id}/data` (JSON for one winning).
+* `/admin/*` — requires a signed-in identity, server-rendered CRUD over SQLite.
+* `/public/*` — unauthenticated: `/public/e` (WebSocket), `/public/present`
+  (standalone display page), `/public/winnings/{id}/data` (JSON for one winning).
 
 Presenting a winner:
 
-1. `views/winning/list.p2` renders a `Present` button per row whose inline JS
-   `fetch()`es `GET /admin/winnings/{id}/present`.
-2. That handler (`uiViewWinningPresent`) writes nothing; it publishes
-   `{"Type":1,"WinID":n}` to every WebSocket subscriber.
+1. `views/winning/list.p2` renders Present/Reveal buttons carrying
+   `data-action`; one delegated listener fetches that URL.
+2. The handler writes nothing — it publishes `{"Type":1,"WinID":n}` to every
+   WebSocket subscriber.
 3. Each `/public/present` tab receives it, fetches the winning's JSON, and
-   renders it through a bundled Mustache template.
-4. `.../reveal` publishes `Type:2` (staged CSS reveal of the winner);
-   `/admin/winnings/clear-board` publishes `Type:3` (clear stage).
+   renders it through a Mustache template held in the page.
+4. `.../reveal` publishes `Type:2` (staged CSS reveal); `/admin/winnings/clear-board`
+   publishes `Type:3` (clear stage).
 
-Consequences worth remembering:
+Worth knowing:
 
-* The message type is a magic number duplicated in three places:
-  `winningMessage.Type` in `pkg/server/winning.go:15`, the `MsgTypeLoad/Reveal/Clear`
-  constants in `present.p2`, and the `fetch()` wiring in `views/winning/list.p2`.
-  Changing the protocol means changing all three.
-* The broadcast is fire-and-forget with no persistence or replay (buffer of 16
-  per subscriber; slow clients are disconnected). A presenter reload shows an
-  empty stage until the next Present.
-* The presenter page hardcodes `ws://` + `document.location.host`, so it does
-  not work behind TLS termination.
+* The message type is a magic number in **two** places: `msgTypeLoad/Reveal/Clear`
+  in `pkg/server/winning.go` and `MsgTypeLoad/Reveal/Clear` in `present.p2`.
+  Nothing checks they agree.
+* The broadcast is fire-and-forget with no replay (16-message buffer per
+  subscriber, slow clients are dropped). A presenter reload shows an empty
+  stage until the next Present.
+* The socket URL is chosen from the page's protocol, so `wss://` works behind
+  TLS termination. It used to hard-code `ws://`.
+* **The read and write timeouts default to 24 hours.** Accepting a WebSocket
+  hijacks the connection and a hijacked connection keeps the deadlines the
+  server set beforehand; `coder/websocket` never clears them. Under the
+  framework's 30-second default the presenter would drop its socket twice a
+  minute and miss whatever was clicked in between. Lower it per deployment
+  with `AWARDCAST_READ_TIMEOUT`/`_WRITE_TIMEOUT` only if there is no socket to
+  keep alive.
 
 ## Conventions
 
-**Handlers.** Methods on `*Server` named `uiView*`. Read handlers end in
-`doTemplate`; write handlers end in `http.Redirect(..., http.StatusSeeOther)`
-back to the list page. Forms post to their own URL (`<form method="post">` with
-no action), so a new route usually needs a `GET` and `POST` on the same path.
+**Handlers.** Methods on `*ui` named `uiView*`, matching
+`webapp.HandlerErr` (`func(http.ResponseWriter, *http.Request) error`). Never
+write a status and then call `View`: return an error and let the funnel pick
+the status, the log level, and whether the response is a re-render or an error
+page. Redirects are `u.SeeOther(w, r, path)`, which is a 303 to the list page.
 
-**Add vs. edit share one handler.** `GET/POST /admin/award/add` and
-`GET/POST /admin/award/{id}/edit` both bind `uiViewAwardFormSingle` /
-`uiViewAwardUpsert` (same for recipients). This works because `strToUint`
-returns `0` for the absent `id` param and GORM's `Save` inserts when the primary
-key is zero. Never route a *delete* through that idiom: an all-zero struct
-condition makes GORM refuse with `WHERE conditions required`.
+**Errors are typed, not numbered.** `webapp.ErrNotFound` renders 404, a
+`*webapp.BadInput` renders 400, `*http.MaxBytesError` renders 413, and
+`*webapp.Rejected{Template, Values, Reasons, Status}` re-renders a form with
+what was typed plus why it was refused (422 unless another status is set). A
+lookup helper that can miss does:
+
+```go
+award, err := oneAward(ctx, u.DB, id)   // maps gorm.ErrRecordNotFound to webapp.ErrNotFound
+```
+
+**Add and edit share one handler.** `GET/POST /admin/award/add` and
+`GET/POST /admin/award/{id}/edit` both bind `uiViewAwardFormSingle` and
+`uiViewAwardUpsert`, and `formID(r)` is what tells them apart: no `{id}` in the
+path means 0 (insert), a malformed one is a 400 rather than a silent zero.
+Writes go through `db.InsertOrUpdate(ctx, u.DB, &award,
+db.OnConflictColumns("id"))`. Never route a delete through that idiom.
 
 **Form field names are entity-prefixed**: `award_slug`, `award_title`,
-`award_sub`, `recipient_name`, `awards_file`, `recipients_file`, and the select
-values `award` / `recipient` for assigning a winning. Bulk upload CSV headers
-become map keys verbatim (`csvToMap`).
+`award_sub`, `recipient_name`, `awards_file`, `recipients_file`, and `award` /
+`recipient` for assigning a winning. Read them with `webapp.FormString` /
+`webapp.FormUint`, never `r.FormValue` — the typed helpers are what turn a bad
+field into a 400.
 
-**Templates.** Set root is `pkg/server/theme/p2`; names passed to `doTemplate`
-are relative to it (`"views/award/list.p2"`). Child templates extend the base
-with a path **relative to the including file** — `{% extends "../../base.p2" %}`
-— so moving a template to a different depth means fixing the `../` count.
-`base.p2` includes `fragments/nav.p2` and provides `title`/`content` blocks;
-`login.p2` and `present.p2` are standalone full documents. `doTemplate` injects
-`user` into every context from the authware request value, so templates (and
-`nav.p2`'s login/logout link) can rely on it without handlers setting it.
-`{% verbatim %}` is required around any JS that uses `{{ }}` (see `present.p2`)
-so pongo2 does not consume it.
+**CSV headers become map keys verbatim and are case-sensitive** (`Slug`,
+`Title`, `Subtitle`, `Name`). A file whose rows disagree with its own header
+length is refused whole with the row number; a file that parses but holds a
+duplicate slug imports the rows it could place and lists the ones it could
+not. That asymmetry is deliberate: a mis-shaped file means the producer is
+holding the wrong export, while one repeated slug at row 400 of 900 should not
+discard 899 awards at 9pm.
 
-**Styles.** `static/css/theme.css` is a small hand-rolled utility set
-(`flex-container`/`flex-row`/`flex-item`/`flex-max`, `box`, `button`,
-`foreground`, `grid-center`, `noprint`) plus the `award-*` presenter animation
-classes; compose those rather than adding new styles per page.
+**Templates.** Names are namespaced. Every page is
+`@awardcast/views/…` and extends `@core/base.p2`, which offers exactly six
+blocks: `title`, `head`, `bodyclass`, `header`, `content`, `footer`. There is
+no `base.p2` or `fragments/nav.p2` in this repository any more — the theme owns
+the layout and the navbar, and a page that wants something outside those six
+blocks is wrong.
 
-**Associations.** GORM needs explicit `Preload(clause.Associations)` before a
-`Winning` is rendered; templates dereference `winning.Award.Slug` and
-`winning.Recipient.Name`, and a missing Preload shows up as blank cells, not an
-error.
+* `{% extends "@core/base.p2" %}` — never a `../` path. Relative extends are
+  gone.
+* `{{ csrfInput }}` goes inside **every** POST form, including the delete
+  confirmations and the file uploads. A form without it is refused with 403
+  once the browser holds a session.
+* `{% if rejected %}…{% for reason in rejected %}` is the notification hook;
+  `rejected` is a `[]string` the funnel sets when a handler returns
+  `*webapp.Rejected`.
+* `{% verbatim %}` is required around JS that uses `{{ }}` (see `present.p2`).
+* Single-line `{# … #}` comments cannot span lines — use
+  `{% comment %}…{% endcomment %}`.
+* The presenter (`present.p2`) is a standalone document that extends nothing,
+  because the layout would put a navbar and a sign-out button on the screen the
+  room is watching. It loads `/static/awards/present.css`.
 
-**Deletes have no DB cascade.** Award/recipient delete handlers delete the child
-`Winning` rows first, then the parent (`uiViewAwardDelete`,
-`uiViewRecipientDelete`). Keep that order for any new relation.
+**Static assets** are served under `/static/awards/…` from the embedded FS.
+`/static/core` belongs to the framework's theme (Bulma, navbar.js); do not add
+files there. The admin pages use Bulma classes (`box`, `table is-fullwidth
+is-striped`, `field`/`label`/`control`, `button is-primary`,
+`notification is-danger is-light`); `present.css` carries only the `award-*`
+animation rules, so a projector repaint cannot be caused by an admin markup
+change.
+
+**Associations need explicit Preloads.** The generics API has no
+preload-everything shorthand — `Preload(clause.Associations)` fails with
+`relation * not found` — so `winningsWithRelations` names both sides:
+`db.G[types.Winning](d).Preload("Award", nil).Preload("Recipient", nil)`. The
+`query` argument is not variadic; pass `nil`. A missing Preload shows up as
+blank cells, not an error.
+
+**Deletes have no DB cascade.** Award and recipient deletes remove the child
+`Winning` rows first, then the parent, inside `db.Transaction`. Keep that order
+for any new relation. Inside the transaction the handle is a `*gorm.DB`, so use
+`gorm.G[T](tx)`, not `db.G[T]`.
+
+## Access control
+
+`/admin/*` is behind `r.Use(u.auth.RequireLogin())` — an identity check, not a
+permission check. Permission gating would deny everyone today: authware grants
+are satisfied by group names, and this repository's `.htgroup` is empty. Only
+add a `Require(perm)` once the group file says who has what.
+
+The session cookie is deliberately re-pinned to authware's plain `session`
+name after `InstallAuth`, which would otherwise name it after the environment
+prefix. That is what keeps an upgrade from signing out whoever was already
+signed in.
+
+`/logout` is **POST only** (the theme's navbar posts to it with a CSRF token).
+The `GET /logout` link of the previous version is gone; a prefetching crawler
+should not be able to sign people out.
+
+## Testing
+
+`pkg/server/server_test.go` drives the real route table through
+`webapp/webapptest` against a temporary SQLite file. Use `newTestApp(t)` for
+the anonymous case and `signedInApp(t)` for everything else.
+
+Three things about the harness cost time to rediscover:
+
+* `signedInApp` does a `GET /admin/` on the way in. A CSRF token exists only
+  after a response has offered one, and a session minted straight into the
+  cookie jar has never seen a page — so without that GET every write comes
+  back 403, which is the middleware working and reads exactly like it failing.
+* `a.Account(id, pw)` creates a **local password** account. The application
+  installs `WithOnlyMechanisms(htpasswd)`, so a local account cannot
+  authenticate against it. Use `a.SignIn("someone")`, which mints a session
+  directly.
+* `testas.As(req, id, groups…)` stamps a context identity that cannot satisfy
+  a route guard. It is for a handler tested in isolation, not for a route test.
+
+`themetest` does not apply here: this is an application using a theme, not a
+theme, and the suite has no layout of its own to check.
 
 ## Gotchas
 
-* **Templates are compiled once and cached.** `doTemplate` uses pongo2's
-  `FromCache`, and the set's `Debug` flag is never enabled, so a template edit
-  needs a process restart — even with `AWARDCAST_DEBUG` set, which only swaps
-  the loader from embedded FS to disk.
-* **The error templates referenced in code do not exist.** `errors/request.p2`
-  and `views/errors/internal.p2` are used by error paths in all three CRUD files
-  but are absent from `theme/p2`. Every error therefore renders pongo2's
-  "Template ... could not be found" text, and the real error only appears in the
-  slog output (warn level, so visible by default). Creating those two files is
-  the fix if you touch error handling.
-* **Error-path style is inconsistent.** award/recipient handlers mix
-  `errors/request.p2` and `views/errors/internal.p2`, and several lookups use
-  `Find` where `First` is intended (`uiViewRecipientFormSingle`,
-  `uiViewWinningDeleteConfirm`), so a missing row is *not* an error there and
-  renders an empty form/confirm page instead of a 404.
-* **`go.mod` marks every requirement `// indirect`**, including chi, gorm,
-  websocket and authware. `go mod tidy` reclassifies them, producing a large
-  unrelated diff; gopls logs that warning continuously — it is not your change.
-* Present and reveal endpoints are `GET`s with no side-effect guard; they are
-  invoked by `fetch()` from the winnings list, not by navigation.
-* Anything under `/public/` is intentionally unauthenticated, so award results
-  are readable by anyone who can reach the port.
-* `Image` (with the `award_graphics` join table) exists in the model and
-  AutoMigrate list but has no handlers or UI yet.
+* Present and reveal are `GET`s with no side-effect guard: they change nothing
+  server-side, they publish an event. Anyone who can reach the admin UI can
+  make the projector move; anyone who can reach `/public/*` can already see the
+  results.
+* Anything under `/public/` is unauthenticated, so award results are readable
+  by anyone who can reach the port.
+* Templates are compiled on first render and then cached, whether they came
+  from the embedded copy or from `AWARDCAST_THEME_DIR`. A template edit needs a
+  restart, and a template with a syntax error surfaces as a 500 on that page
+  rather than as a startup failure — the framework only compiles its own
+  required theme templates at boot.
+* `Image` (with the `award_graphics` join table) exists in the model and the
+  migrate list but has no handlers or UI yet. Its table is registered so a
+  database written by an older version is never rewritten out from under
+  somebody.
+* The CSRF middleware exempts an unsafe request that carries neither a session
+  nor a CSRF cookie. That is what lets the very first anonymous `POST /login`
+  through without a token; it is not a hole to rely on elsewhere.
