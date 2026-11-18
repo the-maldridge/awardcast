@@ -1,0 +1,551 @@
+package server
+
+import (
+	"bytes"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/the-maldridge/webapp/webapptest"
+)
+
+// newTestApp builds an application with awardcast's screens mounted on it.
+//
+// The pieces are wired in the order a real boot uses, with one substitution:
+// the identity service is the test harness's own, over a local account store,
+// rather than the htpasswd file the binary reads from its working directory.
+// Install keeps an already-installed service precisely so this stays possible.
+func newTestApp(t *testing.T) *webapptest.App {
+	t.Helper()
+
+	opts, err := Options()
+	if err != nil {
+		t.Fatalf("Options: %v", err)
+	}
+
+	app := webapptest.NewApp(t, opts...)
+	app.InstallAuth()
+	if err := Install(app.App); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	return app
+}
+
+// signedInApp is every test that reaches an admin screen.
+//
+// The GET is not wasted: a CSRF token only exists once a response has offered
+// one, and a session minted straight into the cookie jar has never seen a page.
+// Skipping this would have every write below arrive without a token and come
+// back 403, which is the middleware working and reads exactly like it failing.
+func signedInApp(t *testing.T) *webapptest.App {
+	t.Helper()
+
+	app := newTestApp(t)
+	app.SignIn("producer")
+
+	resp := app.Get("/admin/")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("warming up a signed-in session: got %d, want %d",
+			resp.StatusCode, http.StatusOK)
+	}
+	if app.CSRFToken() == "" {
+		t.Fatal("the signed-in session holds no CSRF token")
+	}
+	return app
+}
+
+// upload posts a multipart form holding one file under field, with the CSRF
+// token the client holds. The helper exists because neither PostForm nor Post
+// can express "a file plus ordinary fields" on its own.
+func upload(t *testing.T, app *webapptest.App, path, field, fileName string, content []byte) *http.Response {
+	t.Helper()
+
+	body, contentType, err := multipartBody(field, fileName, content, app.CSRFToken())
+	if err != nil {
+		t.Fatalf("building the upload: %v", err)
+	}
+	return app.Post(path, contentType, body)
+}
+
+func multipartBody(field, fileName string, content []byte, csrf string) (io.Reader, string, error) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+
+	if csrf != "" {
+		if err := w.WriteField("csrf_token", csrf); err != nil {
+			return nil, "", err
+		}
+	}
+
+	part, err := w.CreateFormFile(field, fileName)
+	if err != nil {
+		return nil, "", err
+	}
+	if _, err := part.Write(content); err != nil {
+		return nil, "", err
+	}
+	if err := w.Close(); err != nil {
+		return nil, "", err
+	}
+	return &buf, w.FormDataContentType(), nil
+}
+
+// The public address of every admin screen, kept in one list so a route that
+// gets renamed or dropped shows up as a failing test rather than an untested
+// hole in the access control.
+var adminPages = []string{
+	"/admin/",
+	"/admin/award/",
+	"/admin/award/add",
+	"/admin/award/bulk-add",
+	"/admin/recipient/",
+	"/admin/recipient/add",
+	"/admin/recipient/bulk-add",
+	"/admin/winnings/",
+	"/admin/winnings/assign",
+}
+
+func TestAdminPagesRequireAnIdentity(t *testing.T) {
+	app := newTestApp(t)
+
+	for _, path := range adminPages {
+		t.Run(path, func(t *testing.T) {
+			resp := app.Get(path)
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Errorf("GET %s anonymous: got %d, want %d",
+					path, resp.StatusCode, http.StatusUnauthorized)
+			}
+		})
+	}
+}
+
+func TestAdminPagesRenderForSignedInUser(t *testing.T) {
+	app := signedInApp(t)
+
+	for _, path := range adminPages {
+		t.Run(path, func(t *testing.T) {
+			resp := app.Get(path)
+			body := webapptest.Body(t, resp)
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("GET %s: got %d, want %d\n%s",
+					path, resp.StatusCode, http.StatusOK, body)
+			}
+			// Every page is drawn through the theme's layout, so the marker
+			// it always emits is the check that the template namespace
+			// resolved and the page actually rendered.
+			if !strings.Contains(body, "<main") {
+				t.Errorf("GET %s did not render a page inside the layout:\n%s", path, body)
+			}
+		})
+	}
+}
+
+// TestWriteRoutesRejectAnUnsignedForm covers the CSRF rule from the client's
+// side: a signed-in browser that omits the token gets refused. This is the
+// protection the previous version had none of.
+func TestWriteRoutesRejectAnUnsignedForm(t *testing.T) {
+	app := signedInApp(t)
+
+	writes := []struct {
+		path, body string
+	}{
+		{"/admin/award/add", "award_slug=x&award_title=X&award_sub="},
+		{"/admin/award/bulk-add", ""},
+		{"/admin/recipient/add", "recipient_name=x"},
+		{"/admin/recipient/bulk-add", ""},
+		{"/admin/winnings/assign", "award=1&recipient=1"},
+	}
+
+	for _, w := range writes {
+		t.Run(w.path, func(t *testing.T) {
+			resp := app.PostFormNoCSRF(w.path, w.body)
+			if resp.StatusCode != http.StatusForbidden {
+				t.Errorf("POST %s without a token: got %d, want %d",
+					w.path, resp.StatusCode, http.StatusForbidden)
+			}
+		})
+	}
+}
+
+// TestAwardIsCreatedThenEdited covers the add form and the edit form in one
+// pass, because they are the same template and the only difference between them
+// is whether the path carried an id.
+func TestAwardIsCreatedThenEdited(t *testing.T) {
+	app := signedInApp(t)
+
+	resp := app.PostForm("/admin/award/add", "award_slug=best-dressed&award_title=Best+Dressed&award_sub=Senior+Year")
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("creating an award: got %d, want %d\n%s",
+			resp.StatusCode, http.StatusSeeOther, webapptest.Body(t, resp))
+	}
+	if got := resp.Header.Get("Location"); got != "/admin/award/" {
+		t.Errorf("creating an award: Location %q, want %q", got, "/admin/award/")
+	}
+
+	list := webapptest.Body(t, app.Follow(resp))
+	if !strings.Contains(list, "best-dressed") {
+		t.Errorf("the new award is not in the list:\n%s", list)
+	}
+
+	// The row's id is 1 on a freshly migrated database, which is what the
+	// edit path needs. Reaching through the database directly would test the
+	// upsert without testing that the list and the path agree.
+	resp = app.PostForm("/admin/award/1/edit", "award_slug=best-dressed&award_title=Best+Dressed&award_sub=Grad+Year")
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("editing an award: got %d, want %d\n%s",
+			resp.StatusCode, http.StatusSeeOther, webapptest.Body(t, resp))
+	}
+
+	edited := webapptest.Body(t, app.Follow(resp))
+	if !strings.Contains(edited, "Grad Year") {
+		t.Errorf("the edited subtitle is not in the list:\n%s", edited)
+	}
+	// An update that inserted a second row instead would leave the old
+	// subtitle behind, which is the failure mode of an upsert keyed wrong.
+	if strings.Contains(edited, "Senior Year") {
+		t.Errorf("the pre-edit subtitle is still listed, so the update created a new award:\n%s", edited)
+	}
+}
+
+// TestAwardIDFailures separates a malformed id from an unknown one: "abc" is
+// the caller's mistake about the format and 9999 is a stale bookmark, and the
+// two have to be distinguishable in the log if nowhere else.
+func TestAwardIDFailures(t *testing.T) {
+	app := signedInApp(t)
+
+	cases := []struct {
+		path string
+		want int
+	}{
+		{"/admin/award/abc/edit", http.StatusBadRequest},
+		{"/admin/award/abc/delete", http.StatusBadRequest},
+		{"/admin/award/9999/edit", http.StatusNotFound},
+		{"/admin/award/9999/delete", http.StatusNotFound},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			resp := app.Get(tc.path)
+			if resp.StatusCode != tc.want {
+				t.Errorf("GET %s: got %d, want %d", tc.path, resp.StatusCode, tc.want)
+			}
+		})
+	}
+}
+
+// TestDeletingAnAwardTakesItsWinnings is the reason the delete runs in a
+// transaction: a winning left pointing at a deleted award renders a line with
+// no award on the screen the room is watching.
+func TestDeletingAnAwardTakesItsWinnings(t *testing.T) {
+	app := signedInApp(t)
+
+	seed(t, app)
+
+	resp := app.PostForm("/admin/award/1/delete", "")
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("deleting an award: got %d, want %d\n%s",
+			resp.StatusCode, http.StatusSeeOther, webapptest.Body(t, resp))
+	}
+
+	// The winning is gone with it, which the presenter's JSON endpoint says
+	// outright.
+	if got := app.Get("/public/winnings/1/data").StatusCode; got != http.StatusNotFound {
+		t.Errorf("the winning survived its award: GET data got %d, want %d", got, http.StatusNotFound)
+	}
+	// And the recipient it named is untouched.
+	if got := app.Get("/admin/recipient/1/edit").StatusCode; got != http.StatusOK {
+		t.Errorf("the recipient should not have been deleted: got %d, want %d", got, http.StatusOK)
+	}
+}
+
+// seed puts one award, one recipient, and the winning between them in the
+// database, through the same forms a producer uses.
+func seed(t *testing.T, app *webapptest.App) {
+	t.Helper()
+
+	if resp := app.PostForm("/admin/award/add", "award_slug=seed-award&award_title=Seed&award_sub="); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("seeding an award: got %d\n%s", resp.StatusCode, webapptest.Body(t, resp))
+	}
+	if resp := app.PostForm("/admin/recipient/add", "recipient_name=Seed+Person"); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("seeding a recipient: got %d\n%s", resp.StatusCode, webapptest.Body(t, resp))
+	}
+	if resp := app.PostForm("/admin/winnings/assign", "award=1&recipient=1"); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("seeding a winning: got %d\n%s", resp.StatusCode, webapptest.Body(t, resp))
+	}
+}
+
+// TestWinningDataIsJSON covers the one endpoint the presenter polls. It is
+// public on purpose, so it is checked both signed out and for its content type,
+// which the page's JSON.parse depends on.
+func TestWinningDataIsJSON(t *testing.T) {
+	app := signedInApp(t)
+	seed(t, app)
+
+	resp := app.Get("/public/winnings/1/data")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET winning data: got %d, want %d\n%s",
+			resp.StatusCode, http.StatusOK, webapptest.Body(t, resp))
+	}
+	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Errorf("Content-Type %q, want application/json", got)
+	}
+
+	body := webapptest.Body(t, resp)
+	for _, want := range []string{"Seed", "Seed Person"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("winning data does not mention %q:\n%s", want, body)
+		}
+	}
+
+	if got := app.Get("/public/winnings/4242/data").StatusCode; got != http.StatusNotFound {
+		t.Errorf("GET data for an unknown winning: got %d, want %d", got, http.StatusNotFound)
+	}
+}
+
+// TestPublicRoutesNeedNoIdentity is the other half of the access control: the
+// projector screen is in a room full of people who have not signed in.
+func TestPublicRoutesNeedNoIdentity(t *testing.T) {
+	app := newTestApp(t)
+
+	resp := app.Get("/public/present")
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET /public/present: got %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	// The presenter is a standalone document: no navbar, no sign-out form.
+	body := webapptest.Body(t, resp)
+	if strings.Contains(body, "navbar") {
+		t.Errorf("the presenter page picked up the theme's navigation:\n%s", body)
+	}
+	if !strings.Contains(body, "/static/awards/present.css") {
+		t.Errorf("the presenter page is not loading its own stylesheet:\n%s", body)
+	}
+	// A hard-wired ws:// would be refused outright by a browser loading this
+	// page over https.
+	if !strings.Contains(body, "'https:'") {
+		t.Errorf("the presenter page does not choose its socket scheme from the page protocol:\n%s", body)
+	}
+}
+
+func TestRootRedirectsToPresenter(t *testing.T) {
+	app := newTestApp(t)
+
+	resp := app.Get("/")
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("GET /: got %d, want %d", resp.StatusCode, http.StatusSeeOther)
+	}
+	if got := resp.Header.Get("Location"); got != "/public/present" {
+		t.Errorf("GET /: Location %q, want %q", got, "/public/present")
+	}
+}
+
+func TestPresenterAssetsAreServed(t *testing.T) {
+	app := newTestApp(t)
+
+	for _, path := range []string{
+		"/static/awards/present.css",
+		"/static/awards/mustache.js",
+		"/static/awards/reconnecting-websocket.js",
+	} {
+		t.Run(path, func(t *testing.T) {
+			resp := app.Get(path)
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("GET %s: got %d, want %d", path, resp.StatusCode, http.StatusOK)
+			}
+			if body := webapptest.Body(t, resp); body == "" {
+				t.Errorf("GET %s served an empty body", path)
+			}
+		})
+	}
+}
+
+func TestBulkAwardImport(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    int
+		// contains is checked in the response body, which for a rejection is
+		// the rendered form carrying the reason.
+		contains string
+	}{
+		{
+			name:    "a good file imports",
+			content: "Slug,Title,Subtitle\nBest.Dressed,Best Dressed,Senior Year\n",
+			want:    http.StatusSeeOther,
+		},
+		{
+			name:     "a short row refuses the file",
+			content:  "Slug,Title,Subtitle\nonly-one-value\n",
+			want:     http.StatusUnprocessableEntity,
+			contains: "row 2",
+		},
+		{
+			name:     "a header with nothing under it says so",
+			content:  "Slug,Title,Subtitle\n",
+			want:     http.StatusUnprocessableEntity,
+			contains: "nothing else",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app := signedInApp(t)
+
+			resp := upload(t, app, "/admin/award/bulk-add", "awards_file", "awards.csv", []byte(tc.content))
+			if resp.StatusCode != tc.want {
+				t.Fatalf("got %d, want %d\n%s", resp.StatusCode, tc.want, webapptest.Body(t, resp))
+			}
+			if tc.contains != "" {
+				if body := webapptest.Body(t, resp); !strings.Contains(body, tc.contains) {
+					t.Errorf("response does not mention %q:\n%s", tc.contains, body)
+				}
+			}
+		})
+	}
+}
+
+// TestBulkAwardImportMatchesRecipientsByHeader is the contract the CSV helper
+// implements: columns are named by the header rather than fixed by position.
+func TestBulkAwardImportMatchesRecipientsByHeader(t *testing.T) {
+	app := signedInApp(t)
+
+	resp := upload(t, app, "/admin/recipient/bulk-add", "recipients_file", "people.csv",
+		[]byte("Name\nAda\nGrace\n"))
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("got %d, want %d\n%s",
+			resp.StatusCode, http.StatusSeeOther, webapptest.Body(t, resp))
+	}
+
+	body := webapptest.Body(t, app.Follow(resp))
+	for _, want := range []string{"Ada", "Grace"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the imported recipient %q is not listed:\n%s", want, body)
+		}
+	}
+}
+
+// TestBulkUploadMissingFile is the difference between a form submitted empty
+// and a request that was refused: the first is a re-render telling the producer
+// to choose a file.
+func TestBulkUploadMissingFile(t *testing.T) {
+	app := signedInApp(t)
+
+	resp := app.PostForm("/admin/award/bulk-add", "")
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("got %d, want %d\n%s",
+			resp.StatusCode, http.StatusUnprocessableEntity, webapptest.Body(t, resp))
+	}
+}
+
+// TestBulkUploadLargerThanTheFrameworkDefaultIsAccepted is why the application
+// raises the body cap at all: the framework's default is a megabyte, and a
+// member list for any real convention is bigger than that.
+func TestBulkUploadLargerThanTheFrameworkDefaultIsAccepted(t *testing.T) {
+	app := signedInApp(t)
+
+	// Roughly two megabytes, and malformed on the second row so the import
+	// stops without touching the database twice. What is under test is that
+	// the request survived the body cap, which a 413 would say plainly.
+	var buf strings.Builder
+	buf.WriteString("Slug,Title,Subtitle\n")
+	pad := strings.Repeat("x", 256)
+	for buf.Len() < 2<<20 {
+		buf.WriteString(pad)
+		buf.WriteString("\n")
+	}
+
+	resp := upload(t, app, "/admin/award/bulk-add", "awards_file", "big.csv", []byte(buf.String()))
+	if resp.StatusCode == http.StatusRequestEntityTooLarge {
+		t.Fatalf("a 2MB upload hit the body cap; WithMaxBodyBytes is not taking effect")
+	}
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("got %d, want %d", resp.StatusCode, http.StatusUnprocessableEntity)
+	}
+}
+
+// TestLoginWithBadCredentialsKeepsTheForm covers the one place the application
+// renders the theme's own login page after a failure: the status has to say 401
+// and the page has to still be the form, with the reason shown.
+func TestLoginWithBadCredentialsKeepsTheForm(t *testing.T) {
+	app := newTestApp(t)
+
+	// A GET first, so the client holds a CSRF cookie and the POST is held to
+	// it, as a browser's would be.
+	if resp := app.Get("/login"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /login: got %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	resp := app.PostForm("/login", "username=nobody&password=nope")
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("bad credentials: got %d, want %d\n%s",
+			resp.StatusCode, http.StatusUnauthorized, webapptest.Body(t, resp))
+	}
+
+	body := webapptest.Body(t, resp)
+	if !strings.Contains(body, `name="password"`) {
+		t.Errorf("the failure response is not the sign-in form:\n%s", body)
+	}
+	if strings.Contains(body, `value="nope"`) {
+		t.Errorf("the failure response put the submitted password back in the form")
+	}
+	if !strings.Contains(body, "credentials") {
+		t.Errorf("the failure response shows no reason:\n%s", body)
+	}
+}
+
+// TestLoginPageCarriesATokenIsTheFormsJob checks the CSRF input is actually in
+// the rendered forms rather than trusting that it was written into the file.
+func TestEveryFormCarriesCSRFToken(t *testing.T) {
+	app := signedInApp(t)
+
+	pagesWithForms := []string{
+		"/admin/award/add",
+		"/admin/award/bulk-add",
+		"/admin/recipient/add",
+		"/admin/recipient/bulk-add",
+		"/admin/winnings/assign",
+	}
+
+	for _, path := range pagesWithForms {
+		t.Run(path, func(t *testing.T) {
+			body := webapptest.Body(t, app.Get(path))
+			if !strings.Contains(body, `<input type="hidden" name="csrf_token"`) {
+				t.Errorf("%s renders a form with no CSRF input:\n%s", path, body)
+			}
+		})
+	}
+}
+
+// TestDeleteConfirmationsCarryToken covers the three delete confirmation
+// screens, which are the pages most likely to lose the token because their
+// forms are the shortest.
+func TestDeleteConfirmationsCarryToken(t *testing.T) {
+	app := signedInApp(t)
+	seed(t, app)
+
+	for _, path := range []string{
+		"/admin/award/1/delete",
+		"/admin/recipient/1/delete",
+		"/admin/winnings/1/delete",
+	} {
+		t.Run(path, func(t *testing.T) {
+			body := webapptest.Body(t, app.Get(path))
+			if !strings.Contains(body, `<input type="hidden" name="csrf_token"`) {
+				t.Errorf("%s renders a form with no CSRF input:\n%s", path, body)
+			}
+		})
+	}
+}
+
+// TestLogoutIsPostOnly is what stops a prefetching crawler from signing people
+// out, and is the one behaviour change a bookmarked GET /logout will feel.
+func TestLogoutIsPostOnly(t *testing.T) {
+	app := signedInApp(t)
+
+	resp := app.Get("/logout")
+	if resp.StatusCode == http.StatusOK {
+		t.Errorf("GET /logout was accepted; sign-out must be POST-only")
+	}
+}
