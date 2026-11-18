@@ -77,8 +77,16 @@ html, body {
 }
 
 .award-winner-stage3 {
-   opacity: 1;
-   transition: opacity 1s;
+    opacity: 1;
+
+    /* The list has to name max-height as well. `transition` is a shorthand and
+       this rule sits after .award-winner-stage2 at the same specificity, so a
+       list of only opacity replaces the running height transition outright the
+       moment the name is revealed. max-height then snaps to 1000px, the block
+       jumps from wherever it had grown to to its full height, and since the
+       block is vertically centred the whole board jerks upward exactly as the
+       name fades in. Naming both lets the growth run to its own end. */
+    transition: opacity 1s, max-height 4s ease-in-out;
 }
 
 .center {

@@ -300,3 +300,13 @@ theme, and the suite has no layout of its own to check.
 * The CSRF middleware exempts an unsafe request that carries neither a session
   nor a CSRF cookie. That is what lets the very first anonymous `POST /login`
   through without a token; it is not a hole to rely on elsewhere.
+* The presenter's reveal is three additive classes whose timing comes entirely
+  from transitions, so every rule in that chain has to repeat the transitions
+  that are already running. `.award-winner-stage3` therefore lists
+  `max-height 4s ease-in-out` alongside its own `opacity 1s`: `transition` is a
+  shorthand, and a list naming only opacity replaces it, cancelling the height
+  growth mid-flight. The winner block then snaps to its full height in one
+  frame, and because that block is vertically centred, the whole board jerks
+  upward exactly as the name fades in. This is measurable: instrument
+  `getBoundingClientRect().height` on `#winner` and look for a discontinuity
+  between 60 ms samples.
