@@ -34,7 +34,10 @@ const (
 )
 
 func (u *ui) uiViewAwardList(w http.ResponseWriter, r *http.Request) error {
-	awards, err := db.G[types.Award](u.DB).Find(r.Context())
+	// Ordered by slug because the table leads with slug and an unORDERed SELECT
+	// only happens to come back in insertion order. Slug is unique, so the order
+	// is total and the list is the same for every viewer of the same data.
+	awards, err := db.G[types.Award](u.DB).Order("slug").Find(r.Context())
 	if err != nil {
 		return fmt.Errorf("listing awards: %w", err)
 	}

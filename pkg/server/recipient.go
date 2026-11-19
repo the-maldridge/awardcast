@@ -24,7 +24,10 @@ const (
 )
 
 func (u *ui) uiViewRecipientList(w http.ResponseWriter, r *http.Request) error {
-	recipients, err := db.G[types.Recipient](u.DB).Find(r.Context())
+	// Ordered by name, for the same reason the award list is ordered by slug: a
+	// roster that reshuffles between reloads is a roster nobody trusts, and name
+	// is unique, so the order is total.
+	recipients, err := db.G[types.Recipient](u.DB).Order("name").Find(r.Context())
 	if err != nil {
 		return fmt.Errorf("listing recipients: %w", err)
 	}

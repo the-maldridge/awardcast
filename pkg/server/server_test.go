@@ -813,3 +813,54 @@ func TestLegacyWinningsStayInTheQueue(t *testing.T) {
 		t.Errorf("a row with no mark counts as having gone out:\n%s", shown)
 	}
 }
+
+// TestListsArriveInTheirNamedOrder pins the ORDER BY on the award and recipient
+// lists. Without one a SELECT comes back in insertion order for as long as the
+// database is a single SQLite file read by one process, which is every test ever
+// run, and the shuffle only shows up in front of a producer. The names are added
+// in an order that is neither alphabetical nor reversible, so a list that falls
+// back to row order fails the comparison.
+func TestListsArriveInTheirNamedOrder(t *testing.T) {
+	app := signedInApp(t)
+
+	for _, slug := range []string{"zulu", "alpha", "mike"} {
+		form := "award_slug=" + slug + "&award_title=" + slug + "&award_sub="
+		if resp := app.PostForm("/award/add", form); resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("adding award %q: got %d", slug, resp.StatusCode)
+		}
+	}
+	for _, name := range []string{"Zoe", "Amy", "Mo"} {
+		form := "recipient_name=" + name
+		if resp := app.PostForm("/recipient/add", form); resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("adding recipient %q: got %d", name, resp.StatusCode)
+		}
+	}
+
+	awards := webapptest.Body(t, app.Get("/award/"))
+	positions := []string{"<code>alpha</code>", "<code>mike</code>", "<code>zulu</code>"}
+	last := -1
+	for _, want := range positions {
+		at := strings.Index(awards, want)
+		if at < 0 {
+			t.Fatalf("award list is missing %s:\n%s", want, awards)
+		}
+		if at < last {
+			t.Errorf("award list is not in slug order, %s comes too early:\n%s", want, awards)
+		}
+		last = at
+	}
+
+	recipients := webapptest.Body(t, app.Get("/recipient/"))
+	roster := []string{">Amy</td>", ">Mo</td>", ">Zoe</td>"}
+	last = -1
+	for _, want := range roster {
+		at := strings.Index(recipients, want)
+		if at < 0 {
+			t.Fatalf("recipient list is missing %s:\n%s", want, recipients)
+		}
+		if at < last {
+			t.Errorf("recipient list is not in name order, %s comes too early:\n%s", want, recipients)
+		}
+		last = at
+	}
+}

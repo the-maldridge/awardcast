@@ -248,6 +248,12 @@ preload-everything shorthand — `Preload(clause.Associations)` fails with
 `query` argument is not variadic; pass `nil`. A missing Preload shows up as
 blank cells, not an error.
 
+**Lists carry their own `ORDER BY`.** An unORDERed `SELECT` returns rows in
+whatever order the engine likes, and insertion order is a habit SQLite keeps
+only until it decides otherwise. Awards order by `slug`, recipients by `name`,
+winnings by `id`; all three are unique, so the order is total.
+`TestListsArriveInTheirNamedOrder` pins the first two.
+
 **Deletes have no DB cascade.** Award and recipient deletes remove the child
 `Winning` rows first, then the parent, inside `db.Transaction`. Keep that order
 for any new relation. Inside the transaction the handle is a `*gorm.DB`, so use
