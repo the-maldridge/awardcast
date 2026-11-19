@@ -282,6 +282,9 @@ should not be able to sign people out.
 `pkg/server/server_test.go` drives the real route table through
 `webapp/webapptest` against a temporary SQLite file. Use `newTestApp(t)` for
 the anonymous case and `signedInApp(t)` for everything else.
+`pkg/server/templates_test.go` is separate because it tests no handler: it
+mounts the embedded pages and the selected theme and compiles every template
+before any request is made.
 
 Three things about the harness cost time to rediscover:
 
@@ -329,7 +332,10 @@ theme, and the suite has no layout of its own to check.
   from the embedded copy or from `AWARDCAST_THEME_DIR`. A template edit needs a
   restart, and a template with a syntax error surfaces as a 500 on that page
   rather than as a startup failure — the framework only compiles its own
-  required theme templates at boot.
+  required theme templates at boot. `TestEveryTemplateCompiles` is the backstop:
+  it rebuilds the mount and parses every page in the embedded copy, so a broken
+  template is a test failure rather than a ceremony outage. It checks the
+  embedded copy only; an override under `AWARDCAST_THEME_DIR` is on the operator.
 * `Image` (with the `award_graphics` join table) exists in the model and the
   migrate list but has no handlers or UI yet. Its table is registered so a
   database written by an older version is never rewritten out from under
