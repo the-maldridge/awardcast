@@ -46,6 +46,13 @@
       const MsgTypeReveal = 2;
       const MsgTypeClear = 3;
 
+      // How much name to allow before type size gives way. Two lines is the
+      // height the room can follow at a glance; below 35% of the size the
+      // stylesheet asked for, the name is a texture rather than a name, so the
+      // clip takes the spare line instead.
+      const maxNameLines = 2;
+      const minNameFloor = 0.35;
+
       const awardTemplate = document.getElementById('tpl-award').innerHTML;
       const container = document.getElementById('award-container');
 
@@ -80,14 +87,156 @@
 
       function revealWinner() {
         const awardDiv = document.getElementById('award');
-        if (!awardDiv) { return; }
-        awardDiv.classList.add('award-shrink');
-
         const winDiv = document.getElementById('winner');
-        if (!winDiv) { return; }
+        if (!awardDiv || !winDiv) { return; }
+        const name = winDiv.querySelector('h1');
+        if (!name) { return; }
+
+        // Revealing twice is a second click, not a cue to knock the block back to
+        // zero and run the whole thing again. A new award arrives as fresh markup,
+        // so this only ever blocks the repeat.
+        if (winDiv.classList.contains('award-winner-stage2')) { return; }
+
+        // Both the fit and the height read need the block unclipped, and both
+        // happen before anything is visible: stage1 holds the name at opacity
+        // zero, so lifting the clip to measure cannot show. Sizing has to come
+        // first either way, because the height this block reaches is the
+        // distance the title travels, and a name that changed size afterwards
+        // would change the animation part way through it.
+        winDiv.style.maxHeight = 'none';
+        fitName(name);
+        const grown = winDiv.offsetHeight;
+        winDiv.style.maxHeight = '0px';
+        // Commit the starting height. Without this the browser sees the zero and
+        // the target in one pass and jumps straight to the end.
+        void winDiv.offsetHeight;
+
+        awardDiv.classList.add('award-shrink');
         winDiv.classList.add('award-winner-stage2');
-        setTimeout(function () { winDiv.classList.add('award-winner-stage3'); }, 2000);
+        winDiv.style.maxHeight = grown + 'px';
+
+        // The name appears once the title has stopped moving: its two shrinking
+        // transitions and the growth of the block underneath it, which is what
+        // carries the title upward. Nothing here is timed against a hand-written
+        // number, so retiming the reveal is a stylesheet edit and not a race.
+        Promise.all([
+          settled(awardDiv.querySelector('h1'), 'font-size'),
+          settled(awardDiv.querySelector('h2'), 'font-size'),
+          settled(winDiv, 'max-height')
+        ]).then(function () {
+          winDiv.classList.add('award-winner-stage3');
+        });
       }
+
+      // fitName reduces the name's font size until it occupies no more than
+      // maxNameLines, never below minNameFloor of the size the stylesheet asked
+      // for. That ceiling is what keeps a short name rendered exactly as
+      // designed: only a name long enough to wrap is touched at all.
+      function fitName(name) {
+        name.style.fontSize = '';
+        const base = parseFloat(getComputedStyle(name).fontSize);
+
+        // The common case is a name that already fits, and it is left exactly as
+        // the stylesheet sized it.
+        if (countLines(name) <= maxNameLines) { return; }
+
+        const floor = base * minNameFloor;
+
+        // The search keeps a size known to fit and one known not to. Should even
+        // the floor overflow, monotonicity means no larger size fits either, so the
+        // result is the floor and the spare line is clipped by the block, which is a
+        // better failure than type nobody can read from the back of the room.
+        let fits = floor;
+        let tooBig = base;
+        while (tooBig - fits > 1) {
+          const mid = (fits + tooBig) / 2;
+          name.style.fontSize = mid + 'px';
+          if (countLines(name) > maxNameLines) {
+            tooBig = mid;
+          } else {
+            fits = mid;
+          }
+        }
+        name.style.fontSize = fits + 'px';
+      }
+
+      // countLines reports how many line boxes the element's text occupies. A
+      // range's client rects are emitted per line box, so the distinct vertical
+      // positions are the line count. Counting laid-out lines rather than
+      // measuring the string is the only version that is right: the wrap is
+      // decided by the font, the letter spacing, and the browser's own metrics,
+      // which differ between the laptop and the projector.
+      function countLines(el) {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const tops = new Set();
+        for (const rect of range.getClientRects()) {
+          tops.add(Math.round(rect.top));
+        }
+        return Math.max(tops.size, 1);
+      }
+
+      // settled resolves once prop has finished transitioning on el, or once the
+      // duration the stylesheet declares for it has elapsed, whichever comes
+      // first. The fallback is load bearing: if the class change starts no
+      // transition because el already holds its end value, transitionend never
+      // fires, and without it the name would stay invisible forever.
+      function settled(el, prop) {
+        return new Promise(function (resolve) {
+          const style = getComputedStyle(el);
+          // The transition lists are positional, so the entry for prop is at the
+          // same index in every one of them. #winner asks for two transitions, so
+          // taking the first entry of each list would read the wrong duration.
+          const at = listed(style.transitionProperty).indexOf(prop);
+
+          function listed(value) {
+            return value.split(/,\s*/);
+          }
+
+          function secondsAt(value) {
+            if (at < 0) { return 0; }
+            return parseFloat(listed(value)[at]) || 0;
+          }
+
+          function finish() {
+            el.removeEventListener('transitionend', onEnd);
+            clearTimeout(timer);
+            resolve();
+          }
+
+          function onEnd(ev) {
+            if (ev.target === el && ev.propertyName === prop) { finish(); }
+          }
+
+          el.addEventListener('transitionend', onEnd);
+          const wait = secondsAt(style.transitionDuration) + secondsAt(style.transitionDelay);
+          const timer = setTimeout(finish, wait * 1000 + 100);
+        });
+      }
+
+      // A window resize moves the wrap point, so a name sized for one width can
+      // overflow another. Coalesced to a frame because a drag fires one of these
+      // per repaint and a fit is a handful of layout reads.
+      let refitQueued = false;
+      window.addEventListener('resize', function () {
+        if (refitQueued) { return; }
+        refitQueued = true;
+        requestAnimationFrame(function () {
+          refitQueued = false;
+          const winDiv = document.getElementById('winner');
+          const name = winDiv && winDiv.querySelector('h1');
+          if (!name) { return; }
+          const growing = winDiv.classList.contains('award-winner-stage2');
+          // Relayout without replaying the reveal: the height is being corrected
+          // for a new width, not animated to.
+          winDiv.style.transition = 'none';
+          winDiv.style.maxHeight = 'none';
+          fitName(name);
+          winDiv.style.maxHeight = (growing ? winDiv.offsetHeight : 0) + 'px';
+          void winDiv.offsetHeight;
+          winDiv.style.transition = '';
+        });
+      });
 
       function clearBoard() {
         container.classList.remove('award-container-shown');

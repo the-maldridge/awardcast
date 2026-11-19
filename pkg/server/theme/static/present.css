@@ -9,11 +9,19 @@
   so these rules live here and are loaded by nothing else.
 */
 
+/* Overflow is hidden rather than left to the viewport. Nothing on this page is
+   scrollable by intent — a scrollbar on the thing the room is looking at is a
+   defect — and it also keeps the layout width constant, which matters because the
+   script measures the name to size it. Without this, opening the clipped winner
+   block to measure it makes the document taller, a scrollbar appears, and the
+   width drops by its 15px: the name is then fitted and measured against a width it
+   does not have once the block closes again, and comes out a line short. */
 html, body {
     width: 100%;
     height: 100%;
     padding: 0;
     margin: 0;
+    overflow: hidden;
 }
 
 #award h1 {
@@ -26,8 +34,28 @@ html, body {
     font-size: 36pt;
 }
 
+/*
+
+  The reveal's timing is declared here and nowhere else. The stage classes further
+  down carry values only, never a transition of their own, because `transition` is
+  a shorthand: a stage rule naming only the opacity it is about replaces whatever
+  transition the previous stage started. Cancelling the height growth mid-flight is
+  what threw the whole board upward, because the growing block is what carries the
+  title as it moves. An id selector also outranks a class, so a transition added to
+  a stage later would simply not take effect.
+
+*/
 #winner {
     font-size: 72pt;
+
+    transition: opacity 1s, max-height 4s ease-in-out;
+}
+
+/* The script shrinks the name until it fits two lines, but a single name longer
+   than the screen offers no break opportunity for shrinking to solve, so let it
+   break rather than run off the edge of the projection. */
+#winner h1 {
+    overflow-wrap: break-word;
 }
 
 .award-bg {
@@ -41,6 +69,12 @@ html, body {
   title shrinks, the winner's name grows into the space below it, and only then
   does it become opaque. Each rule below is one step, and the stage classes are
   additive, so the order the script adds them in is the order they take effect.
+
+  The script reads the durations off the computed style and starts the fade when
+  the last of them ends, so retiming a step here needs no change over there. What
+  has to stay true is that the growth finishes at the height the name actually
+  occupies, which is why it overwrites stage2's max-height with the measured
+  height rather than let it run past it to the 1000px fallback below.
 
 */
 .award-shrink h1 {
@@ -72,21 +106,22 @@ html, body {
 }
 
 .award-winner-stage2 {
+    /* Replaced by the name's measured height before the growth starts. */
     max-height: 1000px;
-    transition: max-height 4s ease-in-out;
 }
 
 .award-winner-stage3 {
     opacity: 1;
+}
 
-    /* The list has to name max-height as well. `transition` is a shorthand and
-       this rule sits after .award-winner-stage2 at the same specificity, so a
-       list of only opacity replaces the running height transition outright the
-       moment the name is revealed. max-height then snaps to 1000px, the block
-       jumps from wherever it had grown to to its full height, and since the
-       block is vertically centred the whole board jerks upward exactly as the
-       name fades in. Naming both lets the growth run to its own end. */
-    transition: opacity 1s, max-height 4s ease-in-out;
+/* Width comes from the track rather than from the content. As a grid item this
+   block is otherwise sized fit-content, and fit-content never goes below
+   min-content, which for a single unbreakable name is the whole word — the block
+   came out 4204px wide on a 1920px screen and the name ran off both edges. Giving
+   it the track's width is what hands the text a line box to break onto, since
+   overflow-wrap can only break a word that is wider than its line. */
+#award-container {
+    width: 100%;
 }
 
 .center {
@@ -95,6 +130,12 @@ html, body {
 
 .grid-center {
     display: grid;
+
+    /* minmax(0, 1fr) rather than an automatic track. An automatic track is never
+       narrower than its content's max-content width, so one long unbreakable name
+       drags the whole track out past the edge of the projection instead of being
+       wrapped, and nothing in the block below ever gets a line to break onto. */
+    grid-template-columns: minmax(0, 1fr);
     place-items: center;
     height: 100%;
     width: 100%;

@@ -301,12 +301,32 @@ theme, and the suite has no layout of its own to check.
   nor a CSRF cookie. That is what lets the very first anonymous `POST /login`
   through without a token; it is not a hole to rely on elsewhere.
 * The presenter's reveal is three additive classes whose timing comes entirely
-  from transitions, so every rule in that chain has to repeat the transitions
-  that are already running. `.award-winner-stage3` therefore lists
-  `max-height 4s ease-in-out` alongside its own `opacity 1s`: `transition` is a
-  shorthand, and a list naming only opacity replaces it, cancelling the height
-  growth mid-flight. The winner block then snaps to its full height in one
-  frame, and because that block is vertically centred, the whole board jerks
-  upward exactly as the name fades in. This is measurable: instrument
-  `getBoundingClientRect().height` on `#winner` and look for a discontinuity
-  between 60 ms samples.
+  from transitions, and **every transition lives on `#winner`, never on a stage
+  class**. `transition` is a shorthand, so a stage rule naming only the opacity it
+  is about replaces whatever the previous stage started; cancelling the height
+  growth mid-flight jerks the whole board upward, because the growing block is
+  what carries the title. An id selector also outranks a class, which is the
+  second line of defence.
+* The name fades in when the award stops moving, not on a timer: `revealWinner`
+  awaits `transitionend` for the title's two font-size transitions and the block's
+  `max-height`, and the fallback it races them against is read off
+  `getComputedStyle`, so retiming any step is a stylesheet edit alone. That only
+  works because the growth is aimed at the block's **measured** height rather than
+  the `1000px` in stage2, so the transition ending is the same moment the motion
+  ends. Leave those two facts coupled.
+* The recipient's name is sized to fit two lines by a binary search on
+  `getComputedStyle(name).fontSize`, counting line boxes with
+  `Range.getClientRects()`, and it is re-run on resize. Two traps: line boxes are
+  counted rather than the string measured, because the wrap depends on font
+  metrics the projector and the laptop disagree about; and the measurement must
+  happen at the width the reveal will have, which is why `html, body` set
+  `overflow: hidden` — without it, opening the clipped block to measure it grows
+  the document, a scrollbar appears, the layout width drops 15px, and the name
+  comes out a line short. The `#award-container` `width: 100%` is load bearing for
+  the same family of reason: as a fit-content grid item its min-content is one
+  unbreakable name, which ran 4204px across a 1920px screen.
+* All of the above is checkable without a room full of people: drive the page over
+  CDP, call `revealWinner()`, and sample `#winner`'s height and opacity every
+  60-80ms. Assert the height is monotonic with no jump over ~30px, that opacity is
+  still zero when the height stops changing, that line count never exceeds two, and
+  that the block never measures wider than `window.innerWidth`.
