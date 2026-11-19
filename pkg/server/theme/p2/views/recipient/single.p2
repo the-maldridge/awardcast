@@ -45,7 +45,7 @@
             </button>
           </div>
           <div class="control">
-            <a class="button is-light" href="/admin/recipient/">Cancel</a>
+            <a class="button is-light" href="/recipient/">Cancel</a>
           </div>
         </div>
       </form>

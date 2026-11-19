@@ -18,8 +18,8 @@
     </div>
     <div class="level-right">
       <div class="buttons">
-        <a class="button is-small" href="/admin/award/add">Add an award</a>
-        <a class="button is-small" href="/admin/award/bulk-add">Import CSV</a>
+        <a class="button is-small" href="/award/add">Add an award</a>
+        <a class="button is-small" href="/award/bulk-add">Import CSV</a>
       </div>
     </div>
   </div>
@@ -48,8 +48,8 @@
       <tr>
         <td colspan="4" class="has-text-grey">
           No awards yet.
-          <a href="/admin/award/bulk-add">Import a CSV</a>
-          or <a href="/admin/award/add">add one by hand</a>.
+          <a href="/award/bulk-add">Import a CSV</a>
+          or <a href="/award/add">add one by hand</a>.
         </td>
       </tr>
       {% endfor %}

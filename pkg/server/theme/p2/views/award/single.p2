@@ -64,7 +64,7 @@
             </button>
           </div>
           <div class="control">
-            <a class="button is-light" href="/admin/award/">Cancel</a>
+            <a class="button is-light" href="/award/">Cancel</a>
           </div>
         </div>
       </form>

@@ -82,7 +82,7 @@ func (u *ui) uiViewWinningAssignSubmit(w http.ResponseWriter, r *http.Request) e
 		return fmt.Errorf("assigning award %d to recipient %d: %w", awardID, recipientID, err)
 	}
 
-	u.SeeOther(w, r, "/admin/winnings/")
+	u.SeeOther(w, r, "/winnings/")
 	return nil
 }
 
@@ -114,7 +114,7 @@ func (u *ui) uiViewWinningDelete(w http.ResponseWriter, r *http.Request) error {
 		return fmt.Errorf("deleting winning %d: %w", id, err)
 	}
 
-	u.SeeOther(w, r, "/admin/winnings/")
+	u.SeeOther(w, r, "/winnings/")
 	return nil
 }
 

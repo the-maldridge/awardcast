@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -40,6 +41,17 @@ const (
 	// staticPath serves the presenter's assets. The theme owns /static/core,
 	// so the application's files live under their own prefix.
 	staticPath = "/static/awards"
+
+	// adminPrefix is what is left of the address everything used to live under:
+	// the landing page a sign-in lands on, and the old section paths, which now
+	// redirect to the sections' own top level paths.
+	adminPrefix = "/admin"
+
+	// sectionWeight places the three admin sections in the administration band,
+	// which the framework numbers 90 and above. They share it on purpose: ties
+	// break alphabetically, so what a viewer sees is Awards, Recipients,
+	// Winnings whatever order they happen to be registered in.
+	sectionWeight = 90
 
 	// envThemeDir replaces the compiled-in templates with a directory on disk,
 	// which is how a title gets fixed during a rehearsal without a rebuild.
@@ -355,30 +367,51 @@ func mechanisms() ([]auth.Mechanism, error) {
 	return mechs, nil
 }
 
-// registerNav publishes the admin screens to the theme's navbar.
+// registerNav publishes the three admin sections to the theme's navbar.
 //
-// Everything lives under /admin, and the theme decides which item is active by
-// comparing the first path segment of a link with the first segment of the
-// request, so several top-level items would all light up at once. One parent
-// with children keeps exactly one thing highlighted, and the children need no
-// gate of their own: every route behind them already refuses an anonymous
-// request.
+// Each section is a top-level menu rather than a child of one Admin entry, and
+// each therefore owns a path segment of its own: the theme decides what is
+// active by comparing the first path segment of a link with the first segment of
+// the request, so three menus mounted under /admin would all light up on every
+// admin page, and the whole point of highlighting one is that only one is lit.
+// The sections share a weight, ties break alphabetically, and so they read
+// Awards, Recipients, Winnings regardless of the order these appear in.
+//
+// None of it carries a Perm, and neither does any route behind it: what a viewer
+// may reach is answered by RequireLogin alone, and naming a permission here
+// would be a second answer to that question, free to disagree with the first.
 func (u *ui) registerNav() {
-	u.Nav(webapp.NavItem{
-		Weight: 10,
-		Label:  "Admin",
-		Href:   "/admin/",
-		Children: []webapp.NavItem{
-			{Label: "Awards", Href: "/admin/award/"},
-			{Label: "Add an award", Href: "/admin/award/add"},
-			{Label: "Import awards from CSV", Href: "/admin/award/bulk-add"},
-			{Label: "Recipients", Href: "/admin/recipient/"},
-			{Label: "Add a recipient", Href: "/admin/recipient/add"},
-			{Label: "Import recipients from CSV", Href: "/admin/recipient/bulk-add"},
-			{Label: "Winnings", Href: "/admin/winnings/"},
-			{Label: "Assign a winner", Href: "/admin/winnings/assign"},
+	u.Nav(
+		webapp.NavItem{
+			Weight: sectionWeight,
+			Label:  "Awards",
+			Href:   "/award/",
+			Children: []webapp.NavItem{
+				{Label: "All awards", Href: "/award/"},
+				{Label: "Add an award", Href: "/award/add"},
+				{Label: "Import awards from CSV", Href: "/award/bulk-add"},
+			},
 		},
-	})
+		webapp.NavItem{
+			Weight: sectionWeight,
+			Label:  "Recipients",
+			Href:   "/recipient/",
+			Children: []webapp.NavItem{
+				{Label: "All recipients", Href: "/recipient/"},
+				{Label: "Add a recipient", Href: "/recipient/add"},
+				{Label: "Import recipients from CSV", Href: "/recipient/bulk-add"},
+			},
+		},
+		webapp.NavItem{
+			Weight: sectionWeight,
+			Label:  "Winnings",
+			Href:   "/winnings/",
+			Children: []webapp.NavItem{
+				{Label: "All winnings", Href: "/winnings/"},
+				{Label: "Assign a winner", Href: "/winnings/assign"},
+			},
+		},
+	)
 }
 
 // registerRoutes is the whole route table. Public paths are unchanged from the
@@ -415,53 +448,96 @@ func (u *ui) registerRoutes() {
 	// libraries and the stylesheet the award animation lives in.
 	u.Mount(staticPath, http.StripPrefix(staticPath, http.FileServerFS(u.static)))
 
-	u.Route("/admin", func(r webapp.Router) {
-		// Every screen behind here needs an identity. Which identities exist,
-		// and what groups each is in, is the htpasswd file's answer for now.
+	// The three admin sections each mount at a path of their own rather than
+	// under one /admin parent, which is what lets the navbar tell them apart; see
+	// registerNav. Each now takes the login guard itself, there being no shared
+	// parent left to take it once. Which identities exist, and what groups each
+	// is in, is the htpasswd file's answer for now.
+	u.Route("/award", func(r webapp.Router) {
+		r.Use(u.auth.RequireLogin())
+
+		r.GetErr("/", u.uiViewAwardList)
+		r.GetErr("/bulk-add", u.uiViewAwardBulkForm)
+		r.PostErr("/bulk-add", u.uiViewAwardBulkSubmit)
+
+		r.GetErr("/add", u.uiViewAwardFormSingle)
+		r.PostErr("/add", u.uiViewAwardUpsert)
+
+		r.GetErr("/{id}/edit", u.uiViewAwardFormSingle)
+		r.PostErr("/{id}/edit", u.uiViewAwardUpsert)
+		r.GetErr("/{id}/delete", u.uiViewAwardDeleteConfirm)
+		r.PostErr("/{id}/delete", u.uiViewAwardDelete)
+	})
+
+	u.Route("/recipient", func(r webapp.Router) {
+		r.Use(u.auth.RequireLogin())
+
+		r.GetErr("/", u.uiViewRecipientList)
+		r.GetErr("/bulk-add", u.uiViewRecipientBulkForm)
+		r.PostErr("/bulk-add", u.uiViewRecipientBulkSubmit)
+
+		r.GetErr("/add", u.uiViewRecipientFormSingle)
+		r.PostErr("/add", u.uiViewRecipientUpsert)
+
+		r.GetErr("/{id}/edit", u.uiViewRecipientFormSingle)
+		r.PostErr("/{id}/edit", u.uiViewRecipientUpsert)
+		r.GetErr("/{id}/delete", u.uiViewRecipientDeleteConfirm)
+		r.PostErr("/{id}/delete", u.uiViewRecipientDelete)
+	})
+
+	u.Route("/winnings", func(r webapp.Router) {
+		r.Use(u.auth.RequireLogin())
+
+		r.GetErr("/", u.uiViewWinningList)
+		r.GetErr("/assign", u.uiViewWinningAssignForm)
+		r.PostErr("/assign", u.uiViewWinningAssignSubmit)
+		r.GetErr("/clear-board", u.uiViewWinningClearBoard)
+
+		// Present and reveal are GETs: they change nothing on the server, they
+		// only tell the presenter screen what to do next.
+		r.GetErr("/{id}/present", u.uiViewWinningPresent)
+		r.GetErr("/{id}/reveal", u.uiViewWinningReveal)
+		r.GetErr("/{id}/delete", u.uiViewWinningDeleteConfirm)
+		r.PostErr("/{id}/delete", u.uiViewWinningDelete)
+	})
+
+	// What is left of /admin is the landing page a sign-in lands on and the three
+	// sections' old addresses. Those redirect, so a bookmark or a page rendered
+	// by the previous build still arrives instead of meeting a 404 the moment the
+	// binary is replaced.
+	u.Route(adminPrefix, func(r webapp.Router) {
 		r.Use(u.auth.RequireLogin())
 
 		r.GetErr("/", u.uiViewAdminLanding)
 
-		r.Route("/award", func(r webapp.Router) {
-			r.GetErr("/", u.uiViewAwardList)
-			r.GetErr("/bulk-add", u.uiViewAwardBulkForm)
-			r.PostErr("/bulk-add", u.uiViewAwardBulkSubmit)
-
-			r.GetErr("/add", u.uiViewAwardFormSingle)
-			r.PostErr("/add", u.uiViewAwardUpsert)
-
-			r.GetErr("/{id}/edit", u.uiViewAwardFormSingle)
-			r.PostErr("/{id}/edit", u.uiViewAwardUpsert)
-			r.GetErr("/{id}/delete", u.uiViewAwardDeleteConfirm)
-			r.PostErr("/{id}/delete", u.uiViewAwardDelete)
-		})
-
-		r.Route("/recipient", func(r webapp.Router) {
-			r.GetErr("/", u.uiViewRecipientList)
-			r.GetErr("/bulk-add", u.uiViewRecipientBulkForm)
-			r.PostErr("/bulk-add", u.uiViewRecipientBulkSubmit)
-
-			r.GetErr("/add", u.uiViewRecipientFormSingle)
-			r.PostErr("/add", u.uiViewRecipientUpsert)
-
-			r.GetErr("/{id}/edit", u.uiViewRecipientFormSingle)
-			r.PostErr("/{id}/edit", u.uiViewRecipientUpsert)
-			r.GetErr("/{id}/delete", u.uiViewRecipientDeleteConfirm)
-			r.PostErr("/{id}/delete", u.uiViewRecipientDelete)
-		})
-
-		r.Route("/winnings", func(r webapp.Router) {
-			r.GetErr("/", u.uiViewWinningList)
-			r.GetErr("/assign", u.uiViewWinningAssignForm)
-			r.PostErr("/assign", u.uiViewWinningAssignSubmit)
-			r.GetErr("/clear-board", u.uiViewWinningClearBoard)
-
-			// Present and reveal are GETs: they change nothing on the server,
-			// they only tell the presenter screen what to do next.
-			r.GetErr("/{id}/present", u.uiViewWinningPresent)
-			r.GetErr("/{id}/reveal", u.uiViewWinningReveal)
-			r.GetErr("/{id}/delete", u.uiViewWinningDeleteConfirm)
-			r.PostErr("/{id}/delete", u.uiViewWinningDelete)
-		})
+		// Only the sections that moved match, so a path that never existed under
+		// /admin still comes back 404 rather than bouncing off to a guess. GET
+		// only: a form half-filled on a page from before the move is refused when
+		// it submits, and reloading the page is the whole remedy.
+		r.GetErr("/award/*", u.uiRedirectMovedSection)
+		r.GetErr("/recipient/*", u.uiRedirectMovedSection)
+		r.GetErr("/winnings/*", u.uiRedirectMovedSection)
 	})
+}
+
+// uiRedirectMovedSection sends an address from before the sections were broken
+// out to the same place under the section's own top level path.
+//
+// The target is the old path with /admin removed and the result cleaned. The
+// cleaning is not tidiness: a request for /admin/award//evil.com would otherwise
+// hand out a Location that begins with two slashes, which a browser reads as a
+// host rather than a path and which would take a signed-in producer off site.
+func (u *ui) uiRedirectMovedSection(w http.ResponseWriter, r *http.Request) error {
+	target := path.Clean("/" + strings.TrimPrefix(r.URL.Path, adminPrefix))
+	// Clean drops a trailing slash, and each section's own page is mounted with
+	// one, so handing back the cleaned path would cost the caller a second
+	// redirect to arrive where they were already heading.
+	if strings.HasSuffix(r.URL.Path, "/") && !strings.HasSuffix(target, "/") {
+		target += "/"
+	}
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
+	}
+	u.SeeOther(w, r, target)
+	return nil
 }

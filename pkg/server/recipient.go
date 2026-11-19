@@ -67,7 +67,7 @@ func (u *ui) uiViewRecipientUpsert(w http.ResponseWriter, r *http.Request) error
 		return fmt.Errorf("saving recipient %q: %w", name, err)
 	}
 
-	u.SeeOther(w, r, "/admin/recipient/")
+	u.SeeOther(w, r, "/recipient/")
 	return nil
 }
 
@@ -107,7 +107,7 @@ func (u *ui) uiViewRecipientDelete(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 
-	u.SeeOther(w, r, "/admin/recipient/")
+	u.SeeOther(w, r, "/recipient/")
 	return nil
 }
 
@@ -158,7 +158,7 @@ func (u *ui) uiViewRecipientBulkSubmit(w http.ResponseWriter, r *http.Request) e
 		}
 	}
 
-	u.SeeOther(w, r, "/admin/recipient/")
+	u.SeeOther(w, r, "/recipient/")
 	return nil
 }
 

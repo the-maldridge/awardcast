@@ -59,15 +59,15 @@
             <button type="submit" class="button is-primary">Assign</button>
           </div>
           <div class="control">
-            <a class="button is-light" href="/admin/winnings/">Cancel</a>
+            <a class="button is-light" href="/winnings/">Cancel</a>
           </div>
         </div>
       </form>
       {% else %}
       <div class="notification is-warning is-light">
         Assigning needs at least one award and one recipient.
-        {% if not awards %}<a href="/admin/award/bulk-add">Import awards</a>.{% endif %}
-        {% if not recipients %}<a href="/admin/recipient/bulk-add">Import recipients</a>.{% endif %}
+        {% if not awards %}<a href="/award/bulk-add">Import awards</a>.{% endif %}
+        {% if not recipients %}<a href="/recipient/bulk-add">Import recipients</a>.{% endif %}
       </div>
       {% endif %}
     </div>

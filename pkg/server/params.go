@@ -8,7 +8,7 @@ import (
 
 // pathID reads the {id} path parameter. A value that is not a number is bad
 // input rather than a zero id: the previous version parsed "abc" into 0, and a
-// request for /admin/award/abc/delete then asked after the award that had not
+// request for /award/abc/delete then asked after the award that had not
 // been created yet.
 func pathID(r *http.Request) (uint, error) {
 	id, err := webapp.ParamUint(r, "id")

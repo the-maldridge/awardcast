@@ -128,7 +128,11 @@ directory the tests run from.
 
 Two halves share one process:
 
-* `/admin/*` — requires a signed-in identity, server-rendered CRUD over SQLite.
+* `/award/*`, `/recipient/*`, `/winnings/*` — the admin CRUD, server-rendered
+  over SQLite and behind a signed-in identity, each section owning one path
+  segment (see the navbar gotcha below). `/admin/` is the landing page a sign-in
+  lands on, and `/admin/{section}/*` redirects to the section's own address for
+  bookmarks and pages rendered before the sections were broken out.
 * `/public/*` — unauthenticated: `/public/e` (WebSocket), `/public/present`
   (standalone display page), `/public/winnings/{id}/data` (JSON for one winning).
 
@@ -140,7 +144,7 @@ Presenting a winner:
    WebSocket subscriber.
 3. Each `/public/present` tab receives it, fetches the winning's JSON, and
    renders it through a Mustache template held in the page.
-4. `.../reveal` publishes `Type:2` (staged CSS reveal); `/admin/winnings/clear-board`
+4. `.../reveal` publishes `Type:2` (staged CSS reveal); `/winnings/clear-board`
    publishes `Type:3` (clear stage).
 
 Worth knowing:
@@ -179,8 +183,8 @@ lookup helper that can miss does:
 award, err := oneAward(ctx, u.DB, id)   // maps gorm.ErrRecordNotFound to webapp.ErrNotFound
 ```
 
-**Add and edit share one handler.** `GET/POST /admin/award/add` and
-`GET/POST /admin/award/{id}/edit` both bind `uiViewAwardFormSingle` and
+**Add and edit share one handler.** `GET/POST /award/add` and
+`GET/POST /award/{id}/edit` both bind `uiViewAwardFormSingle` and
 `uiViewAwardUpsert`, and `formID(r)` is what tells them apart: no `{id}` in the
 path means 0 (insert), a malformed one is a 400 rather than a silent zero.
 Writes go through `db.InsertOrUpdate(ctx, u.DB, &award,
@@ -244,8 +248,10 @@ for any new relation. Inside the transaction the handle is a `*gorm.DB`, so use
 
 ## Access control
 
-`/admin/*` is behind `r.Use(u.auth.RequireLogin())` — an identity check, not a
-permission check. Permission gating would deny everyone today: authware grants
+Each admin section — `/award`, `/recipient`, `/winnings`, and what is left of
+`/admin` — mounts behind its own `r.Use(u.auth.RequireLogin())`. That is an
+identity check, not a permission check. Permission gating would deny everyone
+today: authware grants
 are satisfied by group names, and this repository's `.htgroup` is empty. Only
 add a `Require(perm)` once the group file says who has what.
 
@@ -282,6 +288,14 @@ theme, and the suite has no layout of its own to check.
 
 ## Gotchas
 
+* The navbar lights an item by comparing the **first path segment** of its link
+  with the first segment of the request, which is why the three admin menus are
+  `Awards`/`Recipients`/`Winnings` at `/award`, `/recipient`, `/winnings` rather
+  than three children of one `/admin` page: mount two menus under one prefix and
+  both light up on every page. All three share `sectionWeight`, ties break
+  alphabetically, and that is the order a producer sees. The one cost is that
+  `/admin/` lights nothing, because it belongs to no section. Both facts are
+  pinned by `TestNavSplitsIntoThreeMenus` and `TestLandingPageLightsNoMenu`.
 * Present and reveal are `GET`s with no side-effect guard: they change nothing
   server-side, they publish an event. Anyone who can reach the admin UI can
   make the projector move; anyone who can reach `/public/*` can already see the

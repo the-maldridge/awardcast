@@ -92,7 +92,7 @@ func (u *ui) uiViewAwardUpsert(w http.ResponseWriter, r *http.Request) error {
 		return fmt.Errorf("saving award %q: %w", slug, err)
 	}
 
-	u.SeeOther(w, r, "/admin/award/")
+	u.SeeOther(w, r, "/award/")
 	return nil
 }
 
@@ -134,7 +134,7 @@ func (u *ui) uiViewAwardDelete(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	u.SeeOther(w, r, "/admin/award/")
+	u.SeeOther(w, r, "/award/")
 	return nil
 }
 
@@ -194,7 +194,7 @@ func (u *ui) uiViewAwardBulkSubmit(w http.ResponseWriter, r *http.Request) error
 		}
 	}
 
-	u.SeeOther(w, r, "/admin/award/")
+	u.SeeOther(w, r, "/award/")
 	return nil
 }
 

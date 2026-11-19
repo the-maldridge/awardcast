@@ -17,8 +17,8 @@
     </div>
     <div class="level-right">
       <div class="buttons">
-        <a class="button is-small" href="/admin/recipient/add">Add a recipient</a>
-        <a class="button is-small" href="/admin/recipient/bulk-add">Import CSV</a>
+        <a class="button is-small" href="/recipient/add">Add a recipient</a>
+        <a class="button is-small" href="/recipient/bulk-add">Import CSV</a>
       </div>
     </div>
   </div>
@@ -43,8 +43,8 @@
       <tr>
         <td colspan="2" class="has-text-grey">
           No recipients yet.
-          <a href="/admin/recipient/bulk-add">Import a CSV</a>
-          or <a href="/admin/recipient/add">add one by hand</a>.
+          <a href="/recipient/bulk-add">Import a CSV</a>
+          or <a href="/recipient/add">add one by hand</a>.
         </td>
       </tr>
       {% endfor %}
