@@ -114,14 +114,17 @@ html, body {
     opacity: 1;
 }
 
-/* Width comes from the track rather than from the content. As a grid item this
-   block is otherwise sized fit-content, and fit-content never goes below
-   min-content, which for a single unbreakable name is the whole word — the block
-   came out 4204px wide on a 1920px screen and the name ran off both edges. Giving
-   it the track's width is what hands the text a line box to break onto, since
-   overflow-wrap can only break a word that is wider than its line. */
+/* The block is deliberately narrower than the screen: type that runs edge to
+   edge does not read as centred on a display, so 80% of the viewport is the
+   presentation width. The number also has to be a bound rather than auto for a
+   plumbing reason. As a grid item this block is otherwise sized fit-content, and
+   fit-content never goes below min-content, which for a single unbreakable name
+   is the whole word — the block came out 4204px wide on a 1920px screen and the
+   name ran off both edges. A bounded width is what hands the text a line box to
+   break onto, since overflow-wrap can only break a word wider than its line, and
+   the script measures the fitted name against exactly this width. */
 #award-container {
-    width: 100%;
+    width: 80%;
 }
 
 .center {

@@ -322,11 +322,18 @@ theme, and the suite has no layout of its own to check.
   happen at the width the reveal will have, which is why `html, body` set
   `overflow: hidden` — without it, opening the clipped block to measure it grows
   the document, a scrollbar appears, the layout width drops 15px, and the name
-  comes out a line short. The `#award-container` `width: 100%` is load bearing for
-  the same family of reason: as a fit-content grid item its min-content is one
-  unbreakable name, which ran 4204px across a 1920px screen.
+  comes out a line short. The `#award-container` `width` is load bearing for the
+  same family of reason: as a fit-content grid item its min-content is one
+  unbreakable name, which ran 4204px across a 1920px screen. Its value is `80%`
+  rather than `100%` for presentation reasons, because type running edge to edge
+  does not read as centred on a projection, so do not widen it back for the extra
+  room: the wrap width the name is fitted against is 80% of the window, and that
+  is what sets how narrow a window the two-line guarantee survives. For the worst
+  name tried, a 53-character one, it holds down to a ~1220px window; below that
+  `minNameFloor` binds before the second line is reached and a third line shows.
 * All of the above is checkable without a room full of people: drive the page over
   CDP, call `revealWinner()`, and sample `#winner`'s height and opacity every
   60-80ms. Assert the height is monotonic with no jump over ~30px, that opacity is
   still zero when the height stops changing, that line count never exceeds two, and
-  that the block never measures wider than `window.innerWidth`.
+  that the block measures 80% of `window.innerWidth` and never crosses an edge of
+  it.
