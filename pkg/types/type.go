@@ -38,4 +38,11 @@ type Winning struct {
 
 	Recipient   Recipient
 	RecipientID uint
+
+	// Presented records that this winning has gone out to the room, which is the
+	// reveal that names the winner rather than the present that only loads it. The
+	// winnings list filters on it so whoever is running the ceremony sees what is
+	// still to come. Clearing it is a deliberate act on purpose: clearing the
+	// projector does not un-show a winner to an audience.
+	Presented bool
 }

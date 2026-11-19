@@ -1,14 +1,20 @@
 {% extends "@core/base.p2" %}
 
 {% comment %}
-  Winning list, and the remote control for the projector.
+  Winning list: the queue the ceremony runs down, and the remote control for the
+  projector.
 
-  Present, reveal, and clear-board change nothing in the database: they publish
-  an event that the presenter screen acts on. That is why they are GETs, and why
-  a click can be a plain fetch with no form and no confirmation. It also means
-  the buttons below are the only part of this page that can fail silently, so
-  the handler reports a failed publish rather than leaving the operator assuming
-  the screen moved.
+  Present, reveal, and clear-board publish an event the presenter screen acts on,
+  which is why a click is a plain fetch with no form and no confirmation. It also
+  means the buttons below are the only part of this page that can fail silently, so
+  the handler reports a failed publish rather than leaving the operator assuming the
+  screen moved.
+
+  Reveal is the one that leaves anything behind: it marks that winning presented,
+  and a presented winning drops out of the default view. That is what the three
+  views above the table are for, and why an empty list says which kind of empty it
+  is: nothing assigned, or everything already gone out. Those are different problems
+  wanting different buttons.
 
   One delegated listener covers every row rather than one per row: the old page
   emitted an inline script block per winning, which meant the page's script grew
@@ -32,6 +38,28 @@
     </div>
   </div>
 
+  <div class="level is-mobile mb-2">
+    <div class="level-left">
+      <div class="buttons">
+        <a class="button is-small{% if filter == "open" %} is-link{% else %} is-light{% endif %}"
+           href="/winnings/?presented=open"{% if filter == "open" %} aria-current="true"{% endif %}>To present</a>
+        <a class="button is-small{% if filter == "presented" %} is-link{% else %} is-light{% endif %}"
+           href="/winnings/?presented=presented"{% if filter == "presented" %} aria-current="true"{% endif %}>Presented</a>
+        <a class="button is-small{% if filter == "all" %} is-link{% else %} is-light{% endif %}"
+           href="/winnings/?presented=all"{% if filter == "all" %} aria-current="true"{% endif %}>All</a>
+      </div>
+    </div>
+    <div class="level-right">
+      <p class="is-size-7 has-text-grey mb-0">
+        {% if totalCount == 0 %}
+        Nothing assigned.
+        {% else %}
+        {{ presentedCount }} of {{ totalCount }} presented
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
   <div class="notification is-danger is-light is-hidden" id="board-error" role="alert"></div>
 
   <table class="table is-fullwidth is-striped is-hoverable">
@@ -40,27 +68,49 @@
         <th>Slug</th>
         <th>Award</th>
         <th>Winner</th>
+        <th>Presented</th>
         <th class="has-text-right">Actions</th>
       </tr>
     </thead>
     <tbody id="winning-rows">
       {% for winning in winnings %}
-      <tr>
+      <tr data-winning="{{ winning.ID }}">
         <td><code>{{ winning.Award.Slug }}</code></td>
         <td>{{ winning.Award.DispTitle }}{% if winning.Award.DispSub %} &middot; {{ winning.Award.DispSub }}{% endif %}</td>
         <td>{{ winning.Recipient.Name }}</td>
+        <td>
+          <span class="tag is-success{% if not winning.Presented %} is-hidden{% endif %}" data-presented>
+            Presented
+          </span>
+        </td>
         <td class="has-text-right">
           <button type="button" class="button is-small"
                   data-action="/winnings/{{ winning.ID }}/present">Present</button>
           <button type="button" class="button is-small is-link"
                   data-action="/winnings/{{ winning.ID }}/reveal">Reveal</button>
+          {% if winning.Presented %}
+          <form method="post" action="/winnings/{{ winning.ID }}/unpresent" class="is-inline">
+            {{ csrfInput }}
+            <button type="submit" class="button is-small is-light">Not presented</button>
+          </form>
+          {% endif %}
           <a class="button is-small is-light is-danger" href="{{ winning.ID }}/delete">Delete</a>
         </td>
       </tr>
       {% empty %}
       <tr>
-        <td colspan="4" class="has-text-grey">
+        <td colspan="5" class="has-text-grey">
+          {% if filter == "presented" %}
+          Nothing has gone out yet. A winning is marked presented when it is revealed.
+          {% else %}
+          {% if presentedCount > 0 %}
+          Everything assigned has been presented.
+          <a href="/winnings/?presented=presented">See what has gone out</a>
+          or <a href="/winnings/assign">assign another winner</a>.
+          {% else %}
           Nothing assigned yet. <a href="/winnings/assign">Assign a winner</a>.
+          {% endif %}
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -81,6 +131,19 @@
       banner.classList.add('is-hidden');
     }
 
+    // A reveal is what makes a winning presented, and the page is not reloaded to
+    // find that out, so the mark is put on the row here. Without it the producer has
+    // no way to tell a reveal that reached the server from a publish that reached no
+    // presenter screen at all, since both answer 200. The row keeps its buttons and
+    // stays where it is: leaving the list is the next reload's business, not this
+    // click's, and yanking the row out from under whoever is aiming at it is not.
+    function markRowPresented(button) {
+      var row = button.closest('tr');
+      if (!row) { return; }
+      var tag = row.querySelector('[data-presented]');
+      if (tag) { tag.classList.remove('is-hidden'); }
+    }
+
     document.addEventListener('click', function (event) {
       var button = event.target.closest('button[data-action]');
       if (!button) { return; }
@@ -90,7 +153,9 @@
         .then(function (response) {
           if (!response.ok) {
             showFailure('The presenter did not receive that command (HTTP ' + response.status + ').');
+            return;
           }
+          if (/\/reveal$/.test(button.dataset.action)) { markRowPresented(button); }
         })
         .catch(function (error) {
           showFailure('The presenter did not receive that command: ' + error.message);

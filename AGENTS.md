@@ -140,12 +140,19 @@ Presenting a winner:
 
 1. `views/winning/list.p2` renders Present/Reveal buttons carrying
    `data-action`; one delegated listener fetches that URL.
-2. The handler writes nothing — it publishes `{"Type":1,"WinID":n}` to every
+2. Present writes nothing — it publishes `{"Type":1,"WinID":n}` to every
    WebSocket subscriber.
 3. Each `/public/present` tab receives it, fetches the winning's JSON, and
    renders it through a Mustache template held in the page.
-4. `.../reveal` publishes `Type:2` (staged CSS reveal); `/winnings/clear-board`
-   publishes `Type:3` (clear stage).
+4. `.../reveal` marks that winning **presented** and publishes `Type:2` (staged
+   CSS reveal); `/winnings/clear-board` publishes `Type:3` (clear stage).
+
+Presented is what the winnings list filters on, and the default is the queue
+rather than the roster: `?presented=open` (or no parameter) is what has not gone
+out, `?presented=presented` is what has, `?presented=all` is everything. The
+reveal sets the mark rather than the present, because loading an award in front of
+an empty room has not shown anybody a winner, and `POST /winnings/{id}/unpresent`
+is the undo for a reveal that never reached the projector.
 
 Worth knowing:
 
@@ -288,6 +295,16 @@ theme, and the suite has no layout of its own to check.
 
 ## Gotchas
 
+* The presented filter is spelled `presented is not true` and `presented is true`,
+  never `= false`. AutoMigrate adds a column and does not fill it in, so a winning
+  written before the mark existed reads NULL, and `presented = false` is not true of
+  a NULL: every award an existing deployment had already assigned would have
+  vanished from both filtered views on upgrade. `TestLegacyWinningsStayInTheQueue`
+  blanks the column to keep that from being rediscovered mid-ceremony.
+* `GET /winnings/{id}/reveal` writes a row. It is the only GET that does: the mark
+  is one column set to a fixed value, so a second reveal or a prefetched link marks
+  what the click meant and nothing more, and the button stays shaped like the rest
+  of the remote control. Anything else that edits a row is a POST with a token.
 * The navbar lights an item by comparing the **first path segment** of its link
   with the first segment of the request, which is why the three admin menus are
   `Awards`/`Recipients`/`Winnings` at `/award`, `/recipient`, `/winnings` rather

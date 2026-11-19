@@ -18,6 +18,19 @@ const (
 	winningListTemplate   = "@awardcast/views/winning/list.p2"
 	winningFormTemplate   = "@awardcast/views/winning/form.p2"
 	winningDeleteTemplate = "@awardcast/views/winning/delete.p2"
+
+	// presentedParam is the winnings list filter, and its default is the point of
+	// the whole thing: mid-ceremony the producer wants the awards that have not
+	// gone out, and a wall of winners already shown pushes the next one down the
+	// screen.
+	presentedParam = "presented"
+
+	// The three views the list offers: un-presented only, the reverse, and
+	// everything. The value for the third spells itself out so a link says what it
+	// shows rather than relying on an absent parameter.
+	filterOpen      = "open"
+	filterPresented = "presented"
+	filterAll       = "all"
 )
 
 // The message types the presenter screen understands. They are a wire format
@@ -36,13 +49,75 @@ type winningMessage struct {
 	WinID uint
 }
 
+// listWinningFilter reads which of the three views was asked for. An absent filter
+// is the default rather than everything: the list is a queue first.
+//
+// A value outside the three is bad input rather than a shrug. Falling back to the
+// default would hand the producer a list they did not ask for, and the one thing
+// not to be uncertain about during a ceremony is what a page is showing.
+func listWinningFilter(r *http.Request) (string, error) {
+	switch filter := r.URL.Query().Get(presentedParam); filter {
+	case "", filterOpen:
+		return filterOpen, nil
+	case filterPresented, filterAll:
+		return filter, nil
+	default:
+		return "", &webapp.BadInput{
+			Name:   presentedParam,
+			Value:  filter,
+			Reason: "must be one of open, presented, all",
+		}
+	}
+}
+
+// uiViewWinningList shows the winnings a filter names, oldest first, which is
+// assignment order and therefore roughly the order the ceremony runs.
+//
+// The two counts are not the list filtered twice. An empty list has to say whether
+// nothing is assigned or everything has already gone out, and those want opposite
+// buttons.
 func (u *ui) uiViewWinningList(w http.ResponseWriter, r *http.Request) error {
-	winnings, err := winningsWithRelations(u.DB).Find(r.Context())
+	filter, err := listWinningFilter(r)
+	if err != nil {
+		return err
+	}
+
+	query := winningsWithRelations(u.DB).Order("id")
+
+	// "is" and "is not" rather than "=" because the mark arrived with this version:
+	// a database written before it has no value for presented, and AutoMigrate adds
+	// the column without backfilling, so those rows read NULL. "presented = false"
+	// is not true of a NULL, which would hide every award already assigned from both
+	// filtered views the moment an existing deployment upgraded.
+	switch filter {
+	case filterOpen:
+		query = query.Where("presented is not true")
+	case filterPresented:
+		query = query.Where("presented is true")
+	}
+
+	winnings, err := query.Find(r.Context())
 	if err != nil {
 		return fmt.Errorf("listing winnings: %w", err)
 	}
 
-	u.View(w, r, winningListTemplate, webapp.Context{"winnings": winnings})
+	presented, err := db.G[types.Winning](u.DB).
+		Where("presented is true").
+		Count(r.Context(), "id")
+	if err != nil {
+		return fmt.Errorf("counting presented winnings: %w", err)
+	}
+	total, err := db.G[types.Winning](u.DB).Count(r.Context(), "id")
+	if err != nil {
+		return fmt.Errorf("counting winnings: %w", err)
+	}
+
+	u.View(w, r, winningListTemplate, webapp.Context{
+		"winnings":       winnings,
+		"filter":         filter,
+		"presentedCount": presented,
+		"totalCount":     total,
+	})
 	return nil
 }
 
@@ -139,8 +214,10 @@ func (u *ui) uiViewWinningData(w http.ResponseWriter, r *http.Request) error {
 }
 
 // uiViewWinningPresent tells every presenter screen to load one winning. The
-// route is a GET because it changes nothing on the server: the ceremony's state
-// is what is on the screen, and this only says what to show next.
+// route is a GET because it changes nothing on the server: the ceremony's state is
+// what is on the screen, and this only says what to show next. Its sibling below
+// is where a winning is marked as having gone out, because loading an award in
+// front of an empty room is not presenting a winner.
 func (u *ui) uiViewWinningPresent(w http.ResponseWriter, r *http.Request) error {
 	id, err := pathID(r)
 	if err != nil {
@@ -149,8 +226,65 @@ func (u *ui) uiViewWinningPresent(w http.ResponseWriter, r *http.Request) error 
 	return u.publish(winningMessage{Type: msgTypeLoad, WinID: id})
 }
 
+// uiViewWinningReveal is where a winning becomes presented: the award is already
+// on the screen from present, and this names the winner to the room.
+//
+// The mark uses the id in the path even though the message carries none, since a
+// reveal acts on whatever a screen happens to be holding. Whoever reveals a row
+// other than the one showing has marked the wrong winning, which is the ambiguity
+// this route already had; the mark only adds that the row then leaves the queue.
+//
+// Marking runs before publishing so that a request for a winning which does not
+// exist cannot move the projector, and the write sets one column to a fixed value:
+// a second reveal, or a browser prefetching the link, cannot mark anything the
+// click did not mean.
 func (u *ui) uiViewWinningReveal(w http.ResponseWriter, r *http.Request) error {
+	id, err := pathID(r)
+	if err != nil {
+		return err
+	}
+	if err := u.markPresented(r, id, true); err != nil {
+		return err
+	}
 	return u.publish(winningMessage{Type: msgTypeReveal})
+}
+
+// uiViewWinningUnpresent puts a winning back in the queue after a mis-click or a
+// reveal that never reached the projector.
+//
+// It is a POST carrying a CSRF token, unlike the two routes above: those are GETs
+// because pressing a remote control is not an edit, while this one edits a row and
+// moves nothing on the screen.
+//
+// The redirect names the all view rather than the default one, because the row
+// just acted on would otherwise disappear from the page the redirect lands on,
+// which reads exactly like the action having failed the other way round.
+func (u *ui) uiViewWinningUnpresent(w http.ResponseWriter, r *http.Request) error {
+	id, err := pathID(r)
+	if err != nil {
+		return err
+	}
+	if err := u.markPresented(r, id, false); err != nil {
+		return err
+	}
+	u.SeeOther(w, r, "/winnings/?"+presentedParam+"="+filterAll)
+	return nil
+}
+
+// markPresented sets or clears the mark on one winning. Zero rows updated is a
+// winning that is not there rather than a successful write of nothing, which is
+// the difference between a 404 and a click that lied about working.
+func (u *ui) markPresented(r *http.Request, id uint, presented bool) error {
+	rows, err := db.G[types.Winning](u.DB).
+		Where("id = ?", id).
+		Update(r.Context(), "presented", presented)
+	if err != nil {
+		return fmt.Errorf("marking winning %d presented=%t: %w", id, presented, err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("winning %d: %w", id, webapp.ErrNotFound)
+	}
+	return nil
 }
 
 func (u *ui) uiViewWinningClearBoard(w http.ResponseWriter, r *http.Request) error {

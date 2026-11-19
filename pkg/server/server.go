@@ -493,10 +493,13 @@ func (u *ui) registerRoutes() {
 		r.PostErr("/assign", u.uiViewWinningAssignSubmit)
 		r.GetErr("/clear-board", u.uiViewWinningClearBoard)
 
-		// Present and reveal are GETs: they change nothing on the server, they
-		// only tell the presenter screen what to do next.
+		// Present and reveal are GETs because they are remote-control presses, and
+		// the only thing either writes is the mark reveal leaves on the row it names.
+		// Putting a winning back is an edit with nothing to press, so unpresent is a
+		// POST like the delete beside it.
 		r.GetErr("/{id}/present", u.uiViewWinningPresent)
 		r.GetErr("/{id}/reveal", u.uiViewWinningReveal)
+		r.PostErr("/{id}/unpresent", u.uiViewWinningUnpresent)
 		r.GetErr("/{id}/delete", u.uiViewWinningDeleteConfirm)
 		r.PostErr("/{id}/delete", u.uiViewWinningDelete)
 	})

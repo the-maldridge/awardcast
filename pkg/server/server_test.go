@@ -5,10 +5,15 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/the-maldridge/webapp/db"
 	"github.com/the-maldridge/webapp/webapptest"
+
+	"github.com/the-maldridge/awardcast/pkg/types"
 )
 
 // newTestApp builds an application with awardcast's screens mounted on it.
@@ -643,5 +648,168 @@ func TestLogoutIsPostOnly(t *testing.T) {
 	resp := app.Get("/logout")
 	if resp.StatusCode == http.StatusOK {
 		t.Errorf("GET /logout was accepted; sign-out must be POST-only")
+	}
+}
+
+// seedTwoWinnings puts two pairings in the database and returns nothing. The ids
+// come out 1 and 2 because a freshly migrated database numbers in creation order,
+// which is the same assumption the award edit test makes.
+func seedTwoWinnings(t *testing.T, app *webapptest.App) {
+	t.Helper()
+
+	pairings := []struct{ slug, person string }{
+		{"best-dressed", "Ada Lovelace"},
+		{"best-hair", "Grace Hopper"},
+	}
+
+	for i, p := range pairings {
+		id := strconv.Itoa(i + 1)
+		if resp := app.PostForm("/award/add", "award_slug="+p.slug+"&award_title=Award&award_sub="); resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("seeding award %s: got %d\n%s", p.slug, resp.StatusCode, webapptest.Body(t, resp))
+		}
+		if resp := app.PostForm("/recipient/add", "recipient_name="+url.QueryEscape(p.person)); resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("seeding recipient %s: got %d\n%s", p.person, resp.StatusCode, webapptest.Body(t, resp))
+		}
+		if resp := app.PostForm("/winnings/assign", "award="+id+"&recipient="+id); resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("assigning %s: got %d\n%s", p.slug, resp.StatusCode, webapptest.Body(t, resp))
+		}
+	}
+}
+
+// TestWinningsListDefaultsToWhatIsLeft is the point of the presented mark: the list
+// a producer lands on is the queue that remains, not the whole roster.
+func TestWinningsListDefaultsToWhatIsLeft(t *testing.T) {
+	app := signedInApp(t)
+	seedTwoWinnings(t, app)
+
+	// Presenting loads the award in front of the room; reveal is what names the
+	// winner, so a present on its own keeps the row in the queue.
+	if got := app.Get("/winnings/1/present").StatusCode; got != http.StatusOK {
+		t.Fatalf("presenting: got %d", got)
+	}
+	loadOnly := webapptest.Body(t, app.Get("/winnings/"))
+	for _, want := range []string{"Ada Lovelace", "Grace Hopper"} {
+		if !strings.Contains(loadOnly, want) {
+			t.Errorf("a present with no reveal took %s out of the default list:\n%s", want, loadOnly)
+		}
+	}
+
+	if got := app.Get("/winnings/1/reveal").StatusCode; got != http.StatusOK {
+		t.Fatalf("revealing: got %d", got)
+	}
+
+	left := webapptest.Body(t, app.Get("/winnings/"))
+	if strings.Contains(left, "Ada Lovelace") {
+		t.Errorf("the revealed winning is still in the default list:\n%s", left)
+	}
+	if !strings.Contains(left, "Grace Hopper") {
+		t.Errorf("the winning still to present is missing from the default list:\n%s", left)
+	}
+	// One row gone out of two, and the page says so: an empty-looking queue that
+	// has been emptied by presenting is a different problem than an unstarted one.
+	if !strings.Contains(left, "1 of 2 presented") {
+		t.Errorf("the default list does not count what has gone out:\n%s", left)
+	}
+
+	shown := webapptest.Body(t, app.Get("/winnings/?presented=presented"))
+	if !strings.Contains(shown, "Ada Lovelace") || strings.Contains(shown, "Grace Hopper") {
+		t.Errorf("the presented view is not the mirror image of the default:\n%s", shown)
+	}
+
+	all := webapptest.Body(t, app.Get("/winnings/?presented=all"))
+	for _, want := range []string{"Ada Lovelace", "Grace Hopper"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("the all view is missing %s:\n%s", want, all)
+		}
+	}
+}
+
+// TestRevealReportsAWinningThatIsNotThere: reveal writes the mark now, so it answers
+// for the id in its path the way every other id-taking route does.
+func TestRevealReportsAWinningThatIsNotThere(t *testing.T) {
+	app := signedInApp(t)
+	seedTwoWinnings(t, app)
+
+	if got := app.Get("/winnings/9999/reveal").StatusCode; got != http.StatusNotFound {
+		t.Errorf("reveal of an unknown winning: got %d, want %d", got, http.StatusNotFound)
+	}
+	if got := app.Get("/winnings/abc/reveal").StatusCode; got != http.StatusBadRequest {
+		t.Errorf("reveal of a malformed id: got %d, want %d", got, http.StatusBadRequest)
+	}
+}
+
+// TestUnpresentPutsARowBack is the undo for a reveal that never reached the room.
+// The way back is a write with a token like every other write, and it lands on the
+// view where the row is still visible.
+func TestUnpresentPutsARowBack(t *testing.T) {
+	app := signedInApp(t)
+	seedTwoWinnings(t, app)
+
+	if got := app.Get("/winnings/1/reveal").StatusCode; got != http.StatusOK {
+		t.Fatalf("revealing: got %d", got)
+	}
+
+	if got := app.PostFormNoCSRF("/winnings/1/unpresent", "").StatusCode; got != http.StatusForbidden {
+		t.Errorf("unpresent without a token: got %d, want %d", got, http.StatusForbidden)
+	}
+
+	resp := app.PostForm("/winnings/1/unpresent", "")
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("unpresent: got %d\n%s", resp.StatusCode, webapptest.Body(t, resp))
+	}
+	if got := resp.Header.Get("Location"); got != "/winnings/?presented=all" {
+		t.Errorf("Location %q, want %q", got, "/winnings/?presented=all")
+	}
+
+	left := webapptest.Body(t, app.Get("/winnings/"))
+	if !strings.Contains(left, "Ada Lovelace") {
+		t.Errorf("the row did not come back to the default list:\n%s", left)
+	}
+
+	all := webapptest.Body(t, app.Get("/winnings/?presented=all"))
+	if strings.Contains(all, `class="tag is-success" data-presented>`) {
+		t.Errorf("the row came back still marked presented:\n%s", all)
+	}
+}
+
+// TestWinningsFilterRejectsWhatItDoesNotOffer: a filter spelling nobody recognises
+// has to be refused rather than ignored, because the quiet fallback is a list of
+// rows the producer did not ask to look at.
+func TestWinningsFilterRejectsWhatItDoesNotOffer(t *testing.T) {
+	app := signedInApp(t)
+
+	resp := app.Get("/winnings/?presented=sometimes")
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("unknown filter: got %d, want %d\n%s",
+			resp.StatusCode, http.StatusBadRequest, webapptest.Body(t, resp))
+	}
+}
+
+// TestLegacyWinningsStayInTheQueue is the upgrade case. The mark arrived after
+// winnings could be assigned, and AutoMigrate adds the column without filling it in,
+// so every row written by the previous version has no value for it at all. A filter
+// spelled "presented = false" is not true of that, and would have hidden every award
+// anybody had already assigned from both filtered views.
+func TestLegacyWinningsStayInTheQueue(t *testing.T) {
+	app := signedInApp(t)
+	seedTwoWinnings(t, app)
+
+	if err := db.G[types.Winning](app.DB).Exec(t.Context(), "update winnings set presented = null"); err != nil {
+		t.Fatalf("blanking the mark: %v", err)
+	}
+
+	body := webapptest.Body(t, app.Get("/winnings/"))
+	for _, want := range []string{"Ada Lovelace", "Grace Hopper"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("a winning with no value for presented is missing from the default list:\n%s", body)
+		}
+	}
+	if strings.Contains(body, "Nothing assigned yet") {
+		t.Errorf("the page says nothing is assigned when two winners are:\n%s", body)
+	}
+
+	shown := webapptest.Body(t, app.Get("/winnings/?presented=presented"))
+	if strings.Contains(shown, "Ada Lovelace") || strings.Contains(shown, "Grace Hopper") {
+		t.Errorf("a row with no mark counts as having gone out:\n%s", shown)
 	}
 }
