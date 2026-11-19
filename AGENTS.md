@@ -17,6 +17,7 @@ the templates under its own namespace, and the event stream.
 | Build | `CGO_ENABLED=1 go build ./...` |
 | Run dev server | `AUTHWARE_SESSION_KEY=devkey go run .` (listens on `:1323`) |
 | Test | `CGO_ENABLED=1 go test ./...` |
+| Presenter check | `node scripts/presenter-check.mjs --url http://127.0.0.1:1323/public/present` — headless Chromium over CDP; needs the server running |
 | Format | `gofmt -l .` — must print nothing |
 | Vet | `go vet ./...` — a clean run is the expectation, and it holds |
 | Container | `docker build -t awardcast .` |
@@ -86,6 +87,7 @@ the Dockerfile — probe it from the orchestrator instead.
 
 ```
 main.go                 slog setup, then webapp's Run (it owns signal handling)
+scripts/                presenter-check.mjs: the reveal choreography over CDP, against a running server
 pkg/server/server.go    options, Install, the whole route table, nav, auth wiring
 pkg/server/award.go     award CRUD and CSV import
 pkg/server/recipient.go recipient CRUD and CSV import
@@ -374,9 +376,13 @@ theme, and the suite has no layout of its own to check.
   is what sets how narrow a window the two-line guarantee survives. For the worst
   name tried, a 53-character one, it holds down to a ~1220px window; below that
   `minNameFloor` binds before the second line is reached and a third line shows.
-* All of the above is checkable without a room full of people: drive the page over
-  CDP, call `revealWinner()`, and sample `#winner`'s height and opacity every
-  60-80ms. Assert the height is monotonic with no jump over ~30px, that opacity is
-  still zero when the height stops changing, that line count never exceeds two, and
-  that the block measures 80% of `window.innerWidth` and never crosses an edge of
-  it.
+* All of the above is checkable without a room full of people, and
+  `scripts/presenter-check.mjs` does it: point it at a running server, and it
+  drives `/public/present` in headless Chromium over CDP, paints a synthetic
+  award through the page's own template, calls `revealWinner()`, and samples the
+  block every frame. It asserts the height is monotonic with no jump over 30px,
+  that opacity is still zero when the height stops changing, that line count
+  never exceeds two, and that the block measures 80% of `window.innerWidth` and
+  never crosses an edge of it. It exits nonzero with the failing measurement
+  named, and `--width` is how the ~1220px two-line floor is demonstrated rather
+  than remembered.
