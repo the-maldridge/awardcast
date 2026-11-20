@@ -58,6 +58,49 @@
       const awardTemplate = document.getElementById('tpl-award').innerHTML;
       const container = document.getElementById('award-container');
 
+      // Colors travel with the award as a ColorTheme and are applied as
+      // custom properties on the body, which present.css reads behind
+      // fallbacks matching the pre-theme screen. These constants restate the
+      // server's validation at paint time: this data arrives over the public
+      // socket path's JSON, and a property value becomes a style, so anything
+      // that is not a hash-and-six-hex-digit color or one of the eight
+      // direction words is dropped rather than trusted.
+      const HEX_COLOR = /^#[0-9a-f]{6}$/;
+      const GRADIENT_DIRS = ['to top', 'to top right', 'to right', 'to bottom right',
+        'to bottom', 'to bottom left', 'to left', 'to top left'];
+      const THEME_PROPS = ['--award-bg', '--award-bg-from', '--award-bg-to',
+        '--award-bg-dir', '--award-text', '--award-winner'];
+
+      // applyTheme paints one award's colors, and clears every property
+      // before setting any: without the clear, the previous award's gradient
+      // would keep bleeding its second stop into an award that asked for a
+      // solid background. Null paints the fallback screen.
+      function applyTheme(theme) {
+        for (const prop of THEME_PROPS) { document.body.style.removeProperty(prop); }
+        if (!theme) { return; }
+
+        const hex = function (v) {
+          return (typeof v === 'string' && HEX_COLOR.test(v)) ? v : null;
+        };
+
+        const bg = hex(theme.Bg);
+        if (!bg) { return; }
+        document.body.style.setProperty('--award-bg', bg);
+
+        const text = hex(theme.Text);
+        if (text) { document.body.style.setProperty('--award-text', text); }
+        const winner = hex(theme.Winner);
+        if (winner) { document.body.style.setProperty('--award-winner', winner); }
+
+        const to = hex(theme.BgTo);
+        if (to) {
+          const dir = GRADIENT_DIRS.indexOf(theme.BgDir) >= 0 ? theme.BgDir : 'to bottom';
+          document.body.style.setProperty('--award-bg-from', bg);
+          document.body.style.setProperty('--award-bg-to', to);
+          document.body.style.setProperty('--award-bg-dir', dir);
+        }
+      }
+
       const socketURL = (location.protocol === 'https:' ? 'wss://' : 'ws://')
         + document.location.host + '/public/e';
       const ws = new ReconnectingWebSocket(socketURL);
@@ -79,6 +122,7 @@
           void container.offsetWidth;
           container.classList.add('award-container-hidden');
           container.innerHTML = Mustache.render(awardTemplate, { 'd': award });
+          applyTheme(award.Award ? award.Award.ColorTheme : null);
           requestAnimationFrame(function () {
             container.classList.add('award-container-shown');
           });

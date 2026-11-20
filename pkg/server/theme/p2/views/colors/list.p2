@@ -1,0 +1,71 @@
+{% extends "@core/base.p2" %}
+
+{% comment %}
+  Color theme list.
+
+  The swatch is the page: a theme is colors, and a table of their names is a
+  list of things the producer has to open one at a time to remember. Solid
+  themes show their background over their text color so that an ivory theme
+  is a visible stripe rather than a blank; gradients show the gradient.
+
+  The tally is how many awards wear the theme. Deleting one that is in
+  service is allowed — those awards fall back to the default — so the number
+  is a warning, not a lock.
+{% endcomment %}
+
+{% block title %}Colors · {{ siteTitle|default:"AwardCast" }}{% endblock %}
+
+{% block content %}
+<div class="box">
+  <div class="level">
+    <div class="level-left">
+      <h1 class="title is-4 mb-0">Color themes</h1>
+    </div>
+    <div class="level-right">
+      <div class="buttons">
+        <a class="button is-small" href="/colors/add">Add a color</a>
+      </div>
+    </div>
+  </div>
+
+  <table class="table is-fullwidth is-striped is-hoverable">
+    <thead>
+      <tr>
+        <th>Preview</th>
+        <th>Name</th>
+        <th>Awards</th>
+        <th class="has-text-right">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for theme in themes %}
+      <tr>
+        <td>
+          {% if theme.BgTo %}
+          <span class="tag color-swatch" style="display: inline-block; width: 3.5rem; height: 1.5rem; vertical-align: middle; border-radius: 4px; border: 1px solid #dbdbdb; background-color: {{ theme.Bg }}; background-image: linear-gradient({{ theme.BgDir }}, {{ theme.Bg }}, {{ theme.BgTo }});"></span>
+          {% else %}
+          <span class="tag color-swatch" style="display: inline-block; width: 3.5rem; height: 1.5rem; vertical-align: middle; border-radius: 4px; border: 1px solid #dbdbdb; background-color: {{ theme.Bg }}; background-image: linear-gradient(to bottom, {{ theme.Bg }} 50%, {{ theme.Text }} 50%);"></span>
+          {% endif %}
+        </td>
+        <td>
+          {{ theme.Name }}
+          {% if theme.IsDefault %}<span class="tag is-info is-light color-default-tag">default</span>{% endif %}
+        </td>
+        <td>{{ theme.UsedBy }}</td>
+        <td class="has-text-right">
+          <a class="button is-small" href="{{ theme.ID }}/edit">Edit</a>
+          <a class="button is-small is-light is-danger" href="{{ theme.ID }}/delete">Delete</a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="4" class="has-text-grey">
+          No color themes yet.
+          <a href="/colors/add">Add one</a>.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -30,6 +30,7 @@
         <th>Slug</th>
         <th>Title</th>
         <th>Subtitle</th>
+        <th>Colors</th>
         <th class="has-text-right">Actions</th>
       </tr>
     </thead>
@@ -39,6 +40,16 @@
         <td><code>{{ award.Slug }}</code></td>
         <td>{{ award.DispTitle }}</td>
         <td>{{ award.DispSub }}</td>
+        <td>
+          {% if award.Theme.Bg %}
+          {% if award.Theme.BgTo %}
+          <span class="tag color-swatch" style="display: inline-block; width: 2rem; height: 1rem; vertical-align: middle; border-radius: 3px; border: 1px solid #dbdbdb; background-color: {{ award.Theme.Bg }}; background-image: linear-gradient({{ award.Theme.BgDir }}, {{ award.Theme.Bg }}, {{ award.Theme.BgTo }});"></span>
+          {% else %}
+          <span class="tag color-swatch" style="display: inline-block; width: 2rem; height: 1rem; vertical-align: middle; border-radius: 3px; border: 1px solid #dbdbdb; background-color: {{ award.Theme.Bg }}; background-image: linear-gradient(to bottom, {{ award.Theme.Bg }} 50%, {{ award.Theme.Text }} 50%);"></span>
+          {% endif %}
+          {{ award.Theme.Name }}{% if not award.ColorThemeID %} <span class="has-text-grey">(default)</span>{% endif %}
+          {% endif %}
+        </td>
         <td class="has-text-right">
           <a class="button is-small" href="{{ award.ID }}/edit">Edit</a>
           <a class="button is-small is-light is-danger" href="{{ award.ID }}/delete">Delete</a>
@@ -46,7 +57,7 @@
       </tr>
       {% empty %}
       <tr>
-        <td colspan="4" class="has-text-grey">
+        <td colspan="5" class="has-text-grey">
           No awards yet.
           <a href="/award/bulk-add">Import a CSV</a>
           or <a href="/award/add">add one by hand</a>.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/the-maldridge/webapp"
@@ -206,9 +207,45 @@ func (u *ui) uiViewWinningData(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
+	// The presenter paints colors from this response, so the award's theme
+	// travels with it: the assigned theme when there is one, the default
+	// otherwise. A miss at either step is no theme rather than a failed
+	// request — a color lookup must not be what keeps the room from seeing
+	// its winner.
+	winning.Award.ColorTheme = u.themeForAward(r.Context(), winning.Award.ColorThemeID)
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(winning); err != nil {
 		return fmt.Errorf("encoding winning %d: %w", id, err)
+	}
+	return nil
+}
+
+// themeForAward resolves the theme one award wears: the theme its id names,
+// and the default theme when the id is zero or dangles — dangling because a
+// theme was deleted out from under the awards, which deleting a theme is
+// allowed to do. Even the default can be missing on a database mid-bootstrap,
+// and that answers no theme: the presenter's own fallbacks paint the old
+// ivory screen, which is a worse-looking outcome than an error on the one
+// screen the room is watching.
+func (u *ui) themeForAward(ctx context.Context, id uint) *types.ColorTheme {
+	if id != 0 {
+		theme, err := db.G[types.ColorTheme](u.DB).Where("id = ?", id).First(ctx)
+		switch {
+		case err == nil:
+			return &theme
+		case !errors.Is(err, gorm.ErrRecordNotFound):
+			slog.Warn("Could not load the color theme of an award; falling back to the default",
+				"theme_id", id, "error", err)
+		}
+	}
+
+	theme, err := db.G[types.ColorTheme](u.DB).Where("is_default is true").First(ctx)
+	switch {
+	case err == nil:
+		return &theme
+	case !errors.Is(err, gorm.ErrRecordNotFound):
+		slog.Warn("Could not load the default color theme; painting without one", "error", err)
 	}
 	return nil
 }

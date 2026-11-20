@@ -58,8 +58,38 @@ html, body {
     overflow-wrap: break-word;
 }
 
+/*
+
+  Colors are the theme the venue typed into a form, and they arrive as custom
+  properties the script sets on the body from the JSON it fetches. Every rule
+  falls back to what this screen looked like before themes existed — ivory
+  behind black — so an award with no theme, or a payload with no colors in
+  it, paints the original screen with no special case here.
+
+  The gradient needs no on/off switch because a transparent-to-transparent
+  gradient paints nothing: a solid theme (or no theme) leaves the two stops
+  transparent, the background-color shows through underneath, and there is no
+  second state a script could forget to clear. The transition covers the color
+  only; background-image is not transitionable, so switching between two
+  gradients swaps instantly, which between awards behind a faded-out container
+  nobody can see.
+
+*/
 .award-bg {
-    background-color: ivory;
+    background-color: var(--award-bg, ivory);
+
+    background-image: linear-gradient(var(--award-bg-dir, to bottom),
+        var(--award-bg-from, transparent), var(--award-bg-to, transparent));
+
+    transition: background-color 1s;
+}
+
+#award h1, #award h2 {
+    color: var(--award-text, #000);
+}
+
+#winner h1 {
+    color: var(--award-winner, #000);
 }
 
 /*

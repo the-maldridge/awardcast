@@ -1,0 +1,124 @@
+{% extends "@core/base.p2" %}
+
+{% comment %}
+  One color theme, added or edited.
+
+  The colors arrive through <input type="color">, which is the only form
+  control that cannot submit a hex the presenter cannot use — and the reason
+  the gradient checkbox matters. A color input nobody touched holds black,
+  not empty, so "solid background" checked is how the producer says the
+  second swatch means nothing this time.
+
+  The direction only means something with a second color; saving a solid
+  theme discards it either way, which is why the select may happily display
+  a direction for a theme that stores none.
+{% endcomment %}
+
+{% block title %}{% if theme.ID %}Edit color theme{% else %}Add color theme{% endif %} · {{ siteTitle|default:"AwardCast" }}{% endblock %}
+
+{% block content %}
+<div class="columns is-centered">
+  <div class="column is-two-thirds-tablet is-half-desktop">
+    <div class="box">
+      <h1 class="title is-4">{% if theme.ID %}Edit color theme{% else %}Add color theme{% endif %}</h1>
+
+      {% if rejected %}
+      <div class="notification is-danger is-light" role="alert">
+        <ul class="ml-4">
+          {% for reason in rejected %}
+          <li>{{ reason }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      <form method="post">
+        {{ csrfInput }}
+
+        <div class="field">
+          <label class="label" for="color_name">Name</label>
+          <div class="control">
+            <input class="input" type="text" id="color_name" name="color_name"
+                   value="{{ theme.Name }}" required maxlength="255">
+          </div>
+          <p class="help">Must be unique. This is what the award form calls the theme.</p>
+        </div>
+
+        <div class="field">
+          <label class="label" for="color_bg">Background</label>
+          <div class="control">
+            <input class="input" type="color" id="color_bg" name="color_bg" value="{{ theme.Bg }}" required>
+          </div>
+          <p class="help">The solid background, or the first color a gradient fades from.</p>
+        </div>
+
+        <div class="field">
+          <div class="control">
+            <label class="checkbox" for="color_gradient_off">
+              <input type="checkbox" id="color_gradient_off" name="color_gradient_off" value="true"
+                     {% if not theme.BgTo %}checked{% endif %}> Solid background
+            </label>
+          </div>
+          <p class="help">Uncheck to fade the background into the second color below.</p>
+        </div>
+
+        <div class="field">
+          <label class="label" for="color_bg_to">Gradient end</label>
+          <div class="control">
+            <input class="input" type="color" id="color_bg_to" name="color_bg_to" value="{{ theme.BgTo }}">
+          </div>
+          <p class="help">Ignored while the background is solid.</p>
+        </div>
+
+        <div class="field">
+          <label class="label" for="color_bg_dir">Gradient direction</label>
+          <div class="select is-fullwidth">
+            <select id="color_bg_dir" name="color_bg_dir">
+              {% for dir in directions %}
+              <option value="{{ dir }}"{% if dir == theme.BgDir %} selected{% endif %}>{{ dir }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="label" for="color_text">Award text</label>
+          <div class="control">
+            <input class="input" type="color" id="color_text" name="color_text" value="{{ theme.Text }}" required>
+          </div>
+          <p class="help">The award title and subtitle. Checked against the background for readability.</p>
+        </div>
+
+        <div class="field">
+          <label class="label" for="color_winner">Winner name</label>
+          <div class="control">
+            <input class="input" type="color" id="color_winner" name="color_winner" value="{{ theme.Winner }}" required>
+          </div>
+          <p class="help">The name as it grows in. Also checked against the background.</p>
+        </div>
+
+        <div class="field">
+          <div class="control">
+            <label class="checkbox" for="color_default">
+              <input type="checkbox" id="color_default" name="color_default" value="true"
+                     {% if theme.IsDefault %}checked{% endif %}> Default theme
+            </label>
+          </div>
+          <p class="help">Awards with no theme of their own wear this one. Exactly one theme holds it; claiming it here hands it over from wherever it was.</p>
+        </div>
+
+        <div class="field is-grouped">
+          <div class="control">
+            <button type="submit" class="button is-primary">
+              {% if theme.ID %}Save{% else %}Add{% endif %}
+            </button>
+          </div>
+          <div class="control">
+            <a class="button is-light" href="/colors/">Cancel</a>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

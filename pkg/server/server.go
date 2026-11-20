@@ -4,6 +4,7 @@
 package server
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -47,10 +48,10 @@ const (
 	// redirect to the sections' own top level paths.
 	adminPrefix = "/admin"
 
-	// sectionWeight places the three admin sections in the administration band,
+	// sectionWeight places the admin sections in the administration band,
 	// which the framework numbers 90 and above. They share it on purpose: ties
-	// break alphabetically, so what a viewer sees is Awards, Recipients,
-	// Winnings whatever order they happen to be registered in.
+	// break alphabetically, so what a viewer sees is Awards, Colors,
+	// Recipients, Winnings whatever order they happen to be registered in.
 	sectionWeight = 90
 
 	// envThemeDir replaces the compiled-in templates with a directory on disk,
@@ -176,6 +177,7 @@ func Options() ([]webapp.Option, error) {
 		// from under somebody.
 		webapp.WithDBOptions(db.WithAutoMigrate(
 			&types.Award{},
+			&types.ColorTheme{},
 			&types.Image{},
 			&types.Recipient{},
 			&types.Winning{},
@@ -268,6 +270,9 @@ func Install(app *webapp.App) error {
 	}
 
 	u := &ui{App: app, auth: svc, stream: newES(), static: static}
+	if err := ensureDefaultTheme(context.Background(), app.DB); err != nil {
+		return err
+	}
 	u.registerNav()
 	u.registerRoutes()
 	return nil
@@ -367,7 +372,7 @@ func mechanisms() ([]auth.Mechanism, error) {
 	return mechs, nil
 }
 
-// registerNav publishes the three admin sections to the theme's navbar.
+// registerNav publishes the four admin sections to the theme's navbar.
 //
 // Each section is a top-level menu rather than a child of one Admin entry, and
 // each therefore owns a path segment of its own: the theme decides what is
@@ -390,6 +395,15 @@ func (u *ui) registerNav() {
 				{Label: "All awards", Href: "/award/"},
 				{Label: "Add an award", Href: "/award/add"},
 				{Label: "Import awards from CSV", Href: "/award/bulk-add"},
+			},
+		},
+		webapp.NavItem{
+			Weight: sectionWeight,
+			Label:  "Colors",
+			Href:   "/colors/",
+			Children: []webapp.NavItem{
+				{Label: "All colors", Href: "/colors/"},
+				{Label: "Add a color", Href: "/colors/add"},
 			},
 		},
 		webapp.NavItem{
@@ -448,7 +462,7 @@ func (u *ui) registerRoutes() {
 	// libraries and the stylesheet the award animation lives in.
 	u.Mount(staticPath, http.StripPrefix(staticPath, http.FileServerFS(u.static)))
 
-	// The three admin sections each mount at a path of their own rather than
+	// The four admin sections each mount at a path of their own rather than
 	// under one /admin parent, which is what lets the navbar tell them apart; see
 	// registerNav. Each now takes the login guard itself, there being no shared
 	// parent left to take it once. Which identities exist, and what groups each
@@ -467,6 +481,20 @@ func (u *ui) registerRoutes() {
 		r.PostErr("/{id}/edit", u.uiViewAwardUpsert)
 		r.GetErr("/{id}/delete", u.uiViewAwardDeleteConfirm)
 		r.PostErr("/{id}/delete", u.uiViewAwardDelete)
+	})
+
+	u.Route("/colors", func(r webapp.Router) {
+		r.Use(u.auth.RequireLogin())
+
+		r.GetErr("/", u.uiViewColorThemeList)
+
+		r.GetErr("/add", u.uiViewColorThemeFormSingle)
+		r.PostErr("/add", u.uiViewColorThemeUpsert)
+
+		r.GetErr("/{id}/edit", u.uiViewColorThemeFormSingle)
+		r.PostErr("/{id}/edit", u.uiViewColorThemeUpsert)
+		r.GetErr("/{id}/delete", u.uiViewColorThemeDeleteConfirm)
+		r.PostErr("/{id}/delete", u.uiViewColorThemeDelete)
 	})
 
 	u.Route("/recipient", func(r webapp.Router) {

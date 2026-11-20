@@ -10,6 +10,13 @@
 // inside it — and every one of them is checkable from the outside, which is
 // what this script does.
 //
+// The geometry pass runs once per color-theme variant (a gradient theme, a
+// solid one, and no theme at all) because colors ride on the same paint as
+// the choreography: a theme that broke the layout would otherwise only be
+// found by the venue that picked the colors. Each variant also gets a color
+// pass, reading the computed styles back out to check that applyTheme put
+// them where present.css reads them.
+//
 // Usage:
 //   node scripts/presenter-check.mjs [--url URL] [--width N] [--height N]
 //                                    [--name TEXT] [--chromium PATH]
@@ -103,16 +110,21 @@ class CDP {
 // page's own template, start the reveal, sample every animation frame, and
 // hand the trace back for assertions. Frame-rate sampling rather than a fixed
 // interval because the failure being hunted is a one-frame jump.
-const TRACE = (name) => `
+const TRACE = (name, theme) => `
   (async () => {
     if (typeof revealWinner !== 'function' || typeof Mustache === 'undefined') {
       return { fatal: 'presenter globals missing: the page did not load fully' };
     }
     const data = {
-      Award: { DispTitle: 'Presenting Check', DispSub: 'regression run' },
+      Award: {
+        DispTitle: 'Presenting Check',
+        DispSub: 'regression run',
+        ColorTheme: ${JSON.stringify(theme)},
+      },
       Recipient: { Name: ${JSON.stringify(name)} },
     };
     container.innerHTML = Mustache.render(awardTemplate, { d: data });
+    applyTheme(data.Award.ColorTheme);
     void container.offsetWidth;
     container.classList.add('award-container-shown');
 
@@ -157,10 +169,194 @@ const TRACE = (name) => `
   })()
 `;
 
+// COLOR_CHECK reads back what applyTheme painted: the custom properties the
+// script set, and the computed styles present.css derived from them. The wait
+// covers the background-color transition, whose interpolated middle would
+// otherwise be what gets read.
+const COLOR_CHECK = () => `
+  (async () => {
+    await new Promise((r) => setTimeout(r, 1300));
+    const cs = getComputedStyle(document.body);
+    const decl = document.body.style;
+    const props = {};
+    for (const p of ['--award-bg', '--award-bg-from', '--award-bg-to',
+                     '--award-bg-dir', '--award-text', '--award-winner']) {
+      props[p] = decl.getPropertyValue(p).trim();
+    }
+    return {
+      bgColor: cs.backgroundColor,
+      bgImage: cs.backgroundImage,
+      awardColor: getComputedStyle(document.querySelector('#award h1')).color,
+      winnerColor: getComputedStyle(document.querySelector('#winner h1')).color,
+      props: props,
+    };
+  })()
+`;
+
+function rgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+}
+
+// The three states a paint can arrive in. The colors are ones a venue would
+// plausibly type: every pairing in them clears the contrast bar the server
+// enforces, so the checks below are about plumbing and not about taste.
+const VARIANTS = [
+  {
+    name: 'gradient',
+    theme: { Bg: '#1a1a2e', BgTo: '#16213e', BgDir: 'to bottom right',
+             Text: '#ffffff', Winner: '#ffd700' },
+  },
+  {
+    name: 'solid',
+    theme: { Bg: '#123456', BgTo: '', BgDir: '',
+             Text: '#ffffff', Winner: '#ffd700' },
+  },
+  { name: 'none', theme: null },
+];
+
+function colorAssertions(variant, c) {
+  const msgs = [];
+  const t = variant.theme;
+
+  if (!t) {
+    // With no theme every property is cleared and the stylesheet's own
+    // fallbacks paint the pre-theme screen: ivory behind black.
+    if (c.bgColor !== 'rgb(255, 255, 240)') {
+      msgs.push(`body background is ${c.bgColor}, want ivory`);
+    }
+    for (const [p, v] of Object.entries(c.props)) {
+      if (v !== '') msgs.push(`${p} still holds ${v}`);
+    }
+    if (c.awardColor !== 'rgb(0, 0, 0)') {
+      msgs.push(`award text is ${c.awardColor}, want black`);
+    }
+    if (c.winnerColor !== 'rgb(0, 0, 0)') {
+      msgs.push(`winner name is ${c.winnerColor}, want black`);
+    }
+    return msgs;
+  }
+
+  if (c.bgColor !== rgb(t.Bg)) {
+    msgs.push(`body background is ${c.bgColor}, want ${rgb(t.Bg)}`);
+  }
+  if (t.BgTo) {
+    // A gradient theme: both stops present, and the script's own from/to/dir
+    // set (the "from" is the background again, spelled out for the gradient).
+    if (!c.bgImage.includes('linear-gradient(')) {
+      msgs.push(`background-image is ${c.bgImage}, want a linear-gradient`);
+    }
+    if (!c.bgImage.includes(rgb(t.Bg)) || !c.bgImage.includes(rgb(t.BgTo))) {
+      msgs.push(`background-image ${c.bgImage} is missing a stop`);
+    }
+    if (c.props['--award-bg-from'] !== t.Bg) {
+      msgs.push(`--award-bg-from is ${c.props['--award-bg-from']}, want ${t.Bg}`);
+    }
+    if (c.props['--award-bg-to'] !== t.BgTo) {
+      msgs.push(`--award-bg-to is ${c.props['--award-bg-to']}, want ${t.BgTo}`);
+    }
+    if (c.props['--award-bg-dir'] !== t.BgDir) {
+      msgs.push(`--award-bg-dir is ${c.props['--award-bg-dir']}, want ${t.BgDir}`);
+    }
+  } else {
+    // A solid theme: the gradient still exists in the rule but must paint
+    // nothing (both stops transparent), and the from/to/dir properties the
+    // previous award may have set are gone.
+    if (!c.bgImage.includes('rgba(0, 0, 0, 0)')) {
+      msgs.push(`solid theme's background-image ${c.bgImage} is not transparent`);
+    }
+    for (const p of ['--award-bg-from', '--award-bg-to', '--award-bg-dir']) {
+      if (c.props[p] !== '') msgs.push(`${p} still holds ${c.props[p]}`);
+    }
+  }
+
+  if (c.awardColor !== rgb(t.Text)) {
+    msgs.push(`award text is ${c.awardColor}, want ${rgb(t.Text)}`);
+  }
+  if (c.winnerColor !== rgb(t.Winner)) {
+    msgs.push(`winner name is ${c.winnerColor}, want ${rgb(t.Winner)}`);
+  }
+  return msgs;
+}
+
 function fail(msgs) {
   for (const m of msgs) console.error('FAIL: ' + m);
   process.exitCode = 1;
   throw new Error('assertions failed');
+}
+
+// variantPass drives one color-theme variant: the full choreography with the
+// variant's theme painted on, then the color readback. Geometry assertions
+// run per variant because the theme and the reveal share one paint, and the
+// only honest way to know a gradient does not disturb the layout is to run
+// the layout with the gradient on.
+async function variantPass(cdp, variant) {
+  const run = await cdp.evaluate(TRACE(NAME, variant.theme));
+  if (run.fatal) {
+    fail([variant.name + ': ' + run.fatal]);
+  }
+
+  const msgs = [];
+  const samples = run.samples;
+  if (samples.length < 5) msgs.push('too few samples for the reveal to have animated');
+
+  // The container is 80% of the window and never crosses an edge; the fit
+  // measures against this width, so widening it silently rewrites the
+  // two-line guarantee.
+  const want = 0.8 * run.innerWidth;
+  if (Math.abs(run.painted.width - want) > 2) {
+    msgs.push(`container is ${run.painted.width}px, want 80% of ${run.innerWidth} (${want}px)`);
+  }
+  for (const s of samples) {
+    if (s.left < -0.5 || s.right > run.innerWidth + 0.5) {
+      msgs.push(`container crosses the viewport edge (left ${s.left}, right ${s.right})`);
+      break;
+    }
+  }
+
+  // Height grows monotonically and never jumps: the growing block carries
+  // the title, so a jump is the whole board snapping upward.
+  let lastH = run.painted.h;
+  for (const s of samples) {
+    if (s.h < lastH - 0.5) msgs.push(`height shrank mid-reveal: ${lastH} to ${s.h}`);
+    if (s.h - lastH > 30) msgs.push(`height jumped ${Math.round(s.h - lastH)}px in one frame`);
+    lastH = s.h;
+  }
+
+  // The name appears when the award stops moving, not on a timer: opacity
+  // must still be zero at the sample where the height settles.
+  let settledAt = -1;
+  for (let i = 1; i < samples.length; i++) {
+    const quiet = samples.slice(Math.max(0, i - 3), i + 1)
+      .every((s) => Math.abs(s.h - samples[i].h) < 0.5);
+    if (quiet && samples[i].o <= 0.005) { settledAt = i; break; }
+  }
+  for (let i = 0; i < samples.length && settledAt >= 0; i++) {
+    if (samples[i].o > 0.005 && i < settledAt) {
+      msgs.push(`name visible before the height settled (t=${Math.round(samples[i].t)}ms)`);
+      break;
+    }
+  }
+  if (settledAt < 0) msgs.push('never saw a settled height with the name still hidden');
+
+  for (const s of samples) {
+    if (s.lines > 2) { msgs.push(`the name exceeded two lines (${s.lines})`); break; }
+  }
+
+  const final = samples[samples.length - 1];
+  if (!(final.h > 0)) msgs.push('final height is zero: nothing was revealed');
+  if (!(final.o > 0.995)) msgs.push(`final opacity ${final.o}, want 1`);
+
+  // The colors were painted by the same call that painted this award, so
+  // the readback belongs to this variant and no other. The wait inside
+  // COLOR_CHECK covers the background-color transition.
+  msgs.push(...colorAssertions(variant, await cdp.evaluate(COLOR_CHECK())));
+
+  if (msgs.length) fail(msgs.map((m) => variant.name + ': ' + m));
+  console.log(`PASS: ${variant.name} theme at ${WIDTH}x${HEIGHT}, ` +
+    `${samples.length} frames, ` +
+    `final height ${Math.round(final.h)}px, ` +
+    `container ${Math.round(run.painted.width)}px of ${run.innerWidth}px`);
 }
 
 async function main() {
@@ -208,68 +404,9 @@ async function main() {
       return;
     }
 
-    const run = await cdp.evaluate(TRACE(NAME));
-    if (run.fatal) {
-      console.error('FAIL: ' + run.fatal);
-      process.exitCode = 1;
-      return;
+    for (const variant of VARIANTS) {
+      await variantPass(cdp, variant);
     }
-
-    const msgs = [];
-    const samples = run.samples;
-    if (samples.length < 5) msgs.push('too few samples for the reveal to have animated');
-
-    // The container is 80% of the window and never crosses an edge; the fit
-    // measures against this width, so widening it silently rewrites the
-    // two-line guarantee.
-    const want = 0.8 * run.innerWidth;
-    if (Math.abs(run.painted.width - want) > 2) {
-      msgs.push(`container is ${run.painted.width}px, want 80% of ${run.innerWidth} (${want}px)`);
-    }
-    for (const s of samples) {
-      if (s.left < -0.5 || s.right > run.innerWidth + 0.5) {
-        msgs.push(`container crosses the viewport edge (left ${s.left}, right ${s.right})`);
-        break;
-      }
-    }
-
-    // Height grows monotonically and never jumps: the growing block carries
-    // the title, so a jump is the whole board snapping upward.
-    let lastH = run.painted.h;
-    for (const s of samples) {
-      if (s.h < lastH - 0.5) msgs.push(`height shrank mid-reveal: ${lastH} to ${s.h}`);
-      if (s.h - lastH > 30) msgs.push(`height jumped ${Math.round(s.h - lastH)}px in one frame`);
-      lastH = s.h;
-    }
-
-    // The name appears when the award stops moving, not on a timer: opacity
-    // must still be zero at the sample where the height settles.
-    let settledAt = -1;
-    for (let i = 1; i < samples.length; i++) {
-      const quiet = samples.slice(Math.max(0, i - 3), i + 1)
-        .every((s) => Math.abs(s.h - samples[i].h) < 0.5);
-      if (quiet && samples[i].o <= 0.005) { settledAt = i; break; }
-    }
-    for (let i = 0; i < samples.length && settledAt >= 0; i++) {
-      if (samples[i].o > 0.005 && i < settledAt) {
-        msgs.push(`name visible before the height settled (t=${Math.round(samples[i].t)}ms)`);
-        break;
-      }
-    }
-    if (settledAt < 0) msgs.push('never saw a settled height with the name still hidden');
-
-    for (const s of samples) {
-      if (s.lines > 2) { msgs.push(`the name exceeded two lines (${s.lines})`); break; }
-    }
-
-    const final = samples[samples.length - 1];
-    if (!(final.h > 0)) msgs.push('final height is zero: nothing was revealed');
-    if (!(final.o > 0.995)) msgs.push(`final opacity ${final.o}, want 1`);
-
-    if (msgs.length) fail(msgs);
-    console.log(`PASS: reveal at ${WIDTH}x${HEIGHT}, ${samples.length} frames, ` +
-      `final height ${Math.round(final.h)}px, ` +
-      `container ${Math.round(run.painted.width)}px of ${run.innerWidth}px`);
 
     ws.close();
   } catch (e) {

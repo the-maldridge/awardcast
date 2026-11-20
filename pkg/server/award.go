@@ -33,6 +33,17 @@ const (
 	bulkFileReason = "No file was uploaded. Choose a CSV file and try again."
 )
 
+// awardListRow is one award plus the theme it will actually wear on the
+// projector: its own when it has one, the default when the id is zero or
+// dangles. Resolving before rendering keeps the fallback rule in Go, next to
+// the identical rule the presenter's JSON follows, rather than restated in
+// template.
+type awardListRow struct {
+	types.Award
+
+	Theme types.ColorTheme
+}
+
 func (u *ui) uiViewAwardList(w http.ResponseWriter, r *http.Request) error {
 	// Ordered by slug because the table leads with slug and an unORDERed SELECT
 	// only happens to come back in insertion order. Slug is unique, so the order
@@ -42,7 +53,31 @@ func (u *ui) uiViewAwardList(w http.ResponseWriter, r *http.Request) error {
 		return fmt.Errorf("listing awards: %w", err)
 	}
 
-	u.View(w, r, awardListTemplate, webapp.Context{"awards": awards})
+	themes, err := db.G[types.ColorTheme](u.DB).Find(r.Context())
+	if err != nil {
+		return fmt.Errorf("listing color themes for the award list: %w", err)
+	}
+	byID := make(map[uint]types.ColorTheme, len(themes))
+	var fallback *types.ColorTheme
+	for i := range themes {
+		byID[themes[i].ID] = themes[i]
+		if themes[i].IsDefault {
+			fallback = &themes[i]
+		}
+	}
+
+	rows := make([]awardListRow, 0, len(awards))
+	for _, award := range awards {
+		row := awardListRow{Award: award}
+		if theme, ok := byID[award.ColorThemeID]; ok {
+			row.Theme = theme
+		} else if fallback != nil {
+			row.Theme = *fallback
+		}
+		rows = append(rows, row)
+	}
+
+	u.View(w, r, awardListTemplate, webapp.Context{"awards": rows})
 	return nil
 }
 
@@ -63,8 +98,26 @@ func (u *ui) uiViewAwardFormSingle(w http.ResponseWriter, r *http.Request) error
 		}
 	}
 
-	u.View(w, r, awardFormTemplate, webapp.Context{"award": award})
+	themes, err := colorThemeChoices(r.Context(), u.DB)
+	if err != nil {
+		return err
+	}
+
+	u.View(w, r, awardFormTemplate, webapp.Context{
+		"award":  award,
+		"themes": themes,
+	})
 	return nil
+}
+
+// colorThemeChoices lists the themes an award form offers, named the way the
+// producer named them.
+func colorThemeChoices(ctx context.Context, d *db.DB) ([]types.ColorTheme, error) {
+	themes, err := db.G[types.ColorTheme](d).Order("name").Find(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing color themes: %w", err)
+	}
+	return themes, nil
 }
 
 // uiViewAwardUpsert writes an award from either form. A zero id inserts and a
@@ -89,8 +142,37 @@ func (u *ui) uiViewAwardUpsert(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	themeID, err := formOptionalUint(r, "award_theme")
+	if err != nil {
+		return err
+	}
 
-	award := types.Award{ID: id, Slug: slug, DispTitle: title, DispSub: sub}
+	award := types.Award{ID: id, Slug: slug, DispTitle: title, DispSub: sub, ColorThemeID: themeID}
+
+	// A theme id that is not in the list is a rejection rather than a save
+	// that quietly drops it: the producer chose a theme, and writing an
+	// award that will wear the default instead is the kind of surprise this
+	// application has no room for. The form is also what held the stale
+	// choice, so the form is where the answer goes.
+	themes, err := colorThemeChoices(r.Context(), u.DB)
+	if err != nil {
+		return err
+	}
+	if themeID != 0 {
+		if _, err := oneColorTheme(r.Context(), u.DB, themeID); err != nil {
+			if errors.Is(err, webapp.ErrNotFound) {
+				return &webapp.Rejected{
+					Template: awardFormTemplate,
+					Values:   webapp.Context{"award": award, "themes": themes},
+					Reasons: []string{
+						"That color theme is no longer in the list. Pick another, or leave the award on the default.",
+					},
+				}
+			}
+			return err
+		}
+	}
+
 	if err := db.InsertOrUpdate(r.Context(), u.DB, &award, db.OnConflictColumns("id")); err != nil {
 		return fmt.Errorf("saving award %q: %w", slug, err)
 	}

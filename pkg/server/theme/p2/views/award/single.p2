@@ -57,6 +57,19 @@
           <p class="help">Optional smaller line, for example the category.</p>
         </div>
 
+        <div class="field">
+          <label class="label" for="award_theme">Color theme</label>
+          <div class="select is-fullwidth">
+            <select id="award_theme" name="award_theme">
+              <option value="">Default</option>
+              {% for theme in themes %}
+              <option value="{{ theme.ID }}"{% if theme.ID == award.ColorThemeID %} selected{% endif %}>{{ theme.Name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <p class="help">The colors this award wears on the projector. Default wears the theme marked as such.</p>
+        </div>
+
         <div class="field is-grouped">
           <div class="control">
             <button type="submit" class="button is-primary">

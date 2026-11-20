@@ -105,6 +105,8 @@ var adminPages = []string{
 	"/award/",
 	"/award/add",
 	"/award/bulk-add",
+	"/colors/",
+	"/colors/add",
 	"/recipient/",
 	"/recipient/add",
 	"/recipient/bulk-add",
@@ -147,19 +149,21 @@ func TestAdminPagesRenderForSignedInUser(t *testing.T) {
 	}
 }
 
-// TestNavSplitsIntoThreeMenus is the navbar a producer actually looks at: the
-// three sections are menus of their own, and exactly one of them is lit on any
-// page. That last part is the reason each section owns a path segment rather than
+// TestNavSplitsIntoSectionMenus is the navbar a producer actually looks at: the
+// sections are menus of their own, and exactly one of them is lit on any page.
+// That last part is the reason each section owns a path segment rather than
 // sharing /admin, since the theme decides what is active by comparing the first
 // segment of a link with the first segment of the request, and a shared prefix
-// lights all three at once.
-func TestNavSplitsIntoThreeMenus(t *testing.T) {
+// lights all of them at once.
+func TestNavSplitsIntoSectionMenus(t *testing.T) {
 	app := signedInApp(t)
 
 	sections := []struct{ path, menu string }{
 		{"/award/", "Awards"},
 		{"/award/add", "Awards"},
 		{"/award/bulk-add", "Awards"},
+		{"/colors/", "Colors"},
+		{"/colors/add", "Colors"},
 		{"/recipient/", "Recipients"},
 		{"/recipient/add", "Recipients"},
 		{"/winnings/", "Winnings"},
@@ -170,8 +174,8 @@ func TestNavSplitsIntoThreeMenus(t *testing.T) {
 		t.Run(s.path, func(t *testing.T) {
 			body := webapptest.Body(t, app.Get(s.path))
 
-			if got := strings.Count(body, "has-dropdown is-hoverable"); got != 3 {
-				t.Errorf("GET %s rendered %d menus, want 3\n%s", s.path, got, body)
+			if got := strings.Count(body, "has-dropdown is-hoverable"); got != 4 {
+				t.Errorf("GET %s rendered %d menus, want 4\n%s", s.path, got, body)
 			}
 			if got := strings.Count(body, "navbar-link is-active"); got != 1 {
 				t.Errorf("GET %s lit %d menus, want 1\n%s", s.path, got, body)
@@ -254,6 +258,7 @@ func TestWriteRoutesRejectAnUnsignedForm(t *testing.T) {
 	}{
 		{"/award/add", "award_slug=x&award_title=X&award_sub="},
 		{"/award/bulk-add", ""},
+		{"/colors/add", "color_name=x&color_bg=%23ffff00&color_text=%23000000&color_winner=%23000000&color_bg_dir=to+bottom"},
 		{"/recipient/add", "recipient_name=x"},
 		{"/recipient/bulk-add", ""},
 		{"/winnings/assign", "award=1&recipient=1"},
@@ -698,6 +703,7 @@ func TestEveryFormCarriesCSRFToken(t *testing.T) {
 	pagesWithForms := []string{
 		"/award/add",
 		"/award/bulk-add",
+		"/colors/add",
 		"/recipient/add",
 		"/recipient/bulk-add",
 		"/winnings/assign",
@@ -722,6 +728,9 @@ func TestDeleteConfirmationsCarryToken(t *testing.T) {
 
 	for _, path := range []string{
 		"/award/1/delete",
+		// A freshly migrated database holds the seeded Classic theme at id 1,
+		// which is as good a thing to stand in front of a delete form as any.
+		"/colors/1/delete",
 		"/recipient/1/delete",
 		"/winnings/1/delete",
 	} {
@@ -956,5 +965,331 @@ func TestListsArriveInTheirNamedOrder(t *testing.T) {
 			t.Errorf("recipient list is not in name order, %s comes too early:\n%s", want, recipients)
 		}
 		last = at
+	}
+}
+
+// colorForm posts a color theme through the very form a producer uses, and
+// fails the test if the save did not redirect. The hash signs are %23 because
+// a raw one in a query string starts a fragment.
+func colorForm(t *testing.T, app *webapptest.App, path, query string) *http.Response {
+	t.Helper()
+
+	resp := app.PostForm(path, query)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST %s: got %d, want %d\n%s",
+			path, resp.StatusCode, http.StatusSeeOther, webapptest.Body(t, resp))
+	}
+	return resp
+}
+
+// solidThemeForm is a complete solid submission under a name, with colors
+// that pass every contrast check so the only thing left to test is the thing
+// the test is about.
+func solidThemeForm(name string) string {
+	return "color_name=" + name +
+		"&color_bg=%23123456&color_gradient_off=true" +
+		"&color_text=%23ffffff&color_winner=%23ffd700" +
+		"&color_bg_dir=to+bottom"
+}
+
+// TestColorThemeCRUD walks the whole colors section: the add form, a save,
+// the list rendering its swatch, the edit, and both halves of the delete.
+func TestColorThemeCRUD(t *testing.T) {
+	app := signedInApp(t)
+
+	body := webapptest.Body(t, app.Get("/colors/add"))
+	if !strings.Contains(body, `id="color_name"`) {
+		t.Errorf("the add form has no name field:\n%s", body)
+	}
+
+	colorForm(t, app, "/colors/add", "color_name=Zebra"+
+		"&color_bg=%231a1a2e&color_bg_to=%2316213e&color_bg_dir=to+bottom+right"+
+		"&color_text=%23ffffff&color_winner=%23ffd700")
+	colorForm(t, app, "/colors/add", solidThemeForm("Amber"))
+
+	list := webapptest.Body(t, app.Get("/colors/"))
+	if !strings.Contains(list, "Zebra") || !strings.Contains(list, "Amber") {
+		t.Errorf("the list is missing a theme it was just given:\n%s", list)
+	}
+	// The gradient row shows the gradient; a row that stored the direction
+	// but lost the second color would paint a stripe instead.
+	if !strings.Contains(list, "linear-gradient(to bottom right, #1a1a2e, #16213e)") {
+		t.Errorf("the gradient theme did not render its gradient swatch:\n%s", list)
+	}
+	// Order is by name, and name is unique, so Amber sits before Zebra.
+	if strings.Index(list, "Amber") > strings.Index(list, "Zebra") {
+		t.Errorf("the list is not in name order:\n%s", list)
+	}
+
+	// Amber is id 3: Classic seeds at 1, and the two rows above came in
+	// creation order.
+	colorForm(t, app, "/colors/3/edit", solidThemeForm("Slate"))
+	list = webapptest.Body(t, app.Get("/colors/"))
+	if !strings.Contains(list, "Slate") {
+		t.Errorf("the edited name is not in the list:\n%s", list)
+	}
+	if strings.Contains(list, "Amber") {
+		t.Errorf("the old name survived the edit, so the update inserted a theme:\n%s", list)
+	}
+
+	confirm := webapptest.Body(t, app.Get("/colors/3/delete"))
+	if !strings.Contains(confirm, "Slate") {
+		t.Errorf("the delete confirmation does not name the theme:\n%s", confirm)
+	}
+
+	colorForm(t, app, "/colors/3/delete", "")
+	list = webapptest.Body(t, app.Get("/colors/"))
+	if strings.Contains(list, "Slate") {
+		t.Errorf("the deleted theme is still listed:\n%s", list)
+	}
+}
+
+// cellText returns the part of a table page from a name up to the end of its
+// cell, which is where that row's tags live.
+func cellText(body, name string) string {
+	at := strings.Index(body, name)
+	if at < 0 {
+		return ""
+	}
+	end := strings.Index(body[at:], "</td>")
+	if end < 0 {
+		return body[at:]
+	}
+	return body[at : at+end]
+}
+
+// TestOneDefaultThemeOnly is the one-default rule from every direction: a new
+// claimant takes the mark, the current holder cannot simply walk away from
+// it, and the holder cannot be deleted either. Zero defaults is the state
+// every later fallback query would have to survive, so the forms refuse to
+// create it.
+func TestOneDefaultThemeOnly(t *testing.T) {
+	app := signedInApp(t)
+
+	// The seeded Classic holds the mark on a fresh database, and refuses to
+	// be deleted while it does.
+	if got := app.PostForm("/colors/1/delete", "").StatusCode; got != http.StatusUnprocessableEntity {
+		t.Errorf("deleting the default theme: got %d, want %d", got, http.StatusUnprocessableEntity)
+	}
+
+	colorForm(t, app, "/colors/add", solidThemeForm("Second")+"&color_default=true")
+
+	list := webapptest.Body(t, app.Get("/colors/"))
+	if got := strings.Count(list, "color-default-tag"); got != 1 {
+		t.Errorf("the list carries %d default tags, want exactly 1:\n%s", got, list)
+	}
+	if !strings.Contains(cellText(list, "Second"), "color-default-tag") {
+		t.Errorf("the new theme did not take the default mark:\n%s", list)
+	}
+	if strings.Contains(cellText(list, "Classic"), "color-default-tag") {
+		t.Errorf("Classic kept the default mark:\n%s", list)
+	}
+
+	// Walking away from the mark is refused, and deleting the holder is
+	// refused too.
+	if got := app.PostForm("/colors/2/edit", solidThemeForm("Second")).StatusCode; got != http.StatusUnprocessableEntity {
+		t.Errorf("unchecking the current default: got %d, want %d", got, http.StatusUnprocessableEntity)
+	}
+	if got := app.PostForm("/colors/2/delete", "").StatusCode; got != http.StatusUnprocessableEntity {
+		t.Errorf("deleting the current default: got %d, want %d", got, http.StatusUnprocessableEntity)
+	}
+}
+
+// TestBootstrapSeedsClassic is the promise an upgrade makes: the first boot
+// of the new version puts a Classic theme holding the default on the list,
+// and an award with no theme of its own wears the screen that was hard-coded
+// before themes existed.
+func TestBootstrapSeedsClassic(t *testing.T) {
+	app := signedInApp(t)
+
+	list := webapptest.Body(t, app.Get("/colors/"))
+	if !strings.Contains(list, "Classic") {
+		t.Errorf("a fresh database has no Classic theme:\n%s", list)
+	}
+	if !strings.Contains(cellText(list, "Classic"), "color-default-tag") {
+		t.Errorf("Classic does not hold the default mark:\n%s", list)
+	}
+
+	// A bare award — no theme assigned — resolves through the default to the
+	// original colors in the presenter's JSON.
+	if resp := app.PostForm("/award/add", "award_slug=bare&award_title=Bare&award_sub="); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("adding an award: got %d", resp.StatusCode)
+	}
+	if resp := app.PostForm("/recipient/add", "recipient_name=Anyone"); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("adding a recipient: got %d", resp.StatusCode)
+	}
+	if resp := app.PostForm("/winnings/assign", "award=1&recipient=1"); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("assigning the winning: got %d", resp.StatusCode)
+	}
+
+	data := webapptest.Body(t, app.Get("/public/winnings/1/data"))
+	for _, want := range []string{`"Bg":"#fffff0"`, `"BgTo":""`, `"Text":"#000000"`, `"Winner":"#000000"`} {
+		if !strings.Contains(data, want) {
+			t.Errorf("the unassigned award's data does not carry %s:\n%s", want, data)
+		}
+	}
+}
+
+// TestWinningDataCarriesTheAwardTheme covers the three resolutions the
+// presenter can meet: the award's own theme, no theme (the default), and a
+// theme id whose row was deleted (also the default, because deleting a theme
+// is allowed to leave awards behind).
+func TestWinningDataCarriesTheAwardTheme(t *testing.T) {
+	app := signedInApp(t)
+
+	colorForm(t, app, "/colors/add", "color_name=Midnight"+
+		"&color_bg=%231a1a2e&color_bg_to=%2316213e&color_bg_dir=to+bottom"+
+		"&color_text=%23ffffff&color_winner=%23ffd700")
+
+	for _, slug := range []string{"themed", "plain"} {
+		form := "award_slug=" + slug + "&award_title=" + slug + "&award_sub="
+		if slug == "themed" {
+			form += "&award_theme=2"
+		}
+		if resp := app.PostForm("/award/add", form); resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("adding %s: got %d", slug, resp.StatusCode)
+		}
+	}
+	if resp := app.PostForm("/recipient/add", "recipient_name=Anyone"); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("adding a recipient: got %d", resp.StatusCode)
+	}
+	for _, pair := range []string{"award=1&recipient=1", "award=2&recipient=1"} {
+		if resp := app.PostForm("/winnings/assign", pair); resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("assigning a winning: got %d", resp.StatusCode)
+		}
+	}
+
+	themed := webapptest.Body(t, app.Get("/public/winnings/1/data"))
+	for _, want := range []string{`"Name":"Midnight"`, `"Bg":"#1a1a2e"`, `"BgTo":"#16213e"`, `"BgDir":"to bottom"`} {
+		if !strings.Contains(themed, want) {
+			t.Errorf("the themed award's data does not carry %s:\n%s", want, themed)
+		}
+	}
+
+	plain := webapptest.Body(t, app.Get("/public/winnings/2/data"))
+	if !strings.Contains(plain, `"Name":"Classic"`) {
+		t.Errorf("the unassigned award did not resolve to the default:\n%s", plain)
+	}
+
+	// Delete the theme out from under the award that wears it: the id
+	// dangles, and a dangling id is the default, not an error and not a
+	// colorless screen.
+	colorForm(t, app, "/colors/2/delete", "")
+	after := webapptest.Body(t, app.Get("/public/winnings/1/data"))
+	if !strings.Contains(after, `"Name":"Classic"`) {
+		t.Errorf("the orphaned award did not fall back to the default:\n%s", after)
+	}
+}
+
+// TestColorThemesValidateTheirColors is the refusal list: colors that are not
+// colors, a gradient without a direction or with an invented one, and text
+// the back row cannot read — including the straddle a naive endpoint check
+// waves through, where the gradient passes through the text color somewhere
+// in the middle.
+func TestColorThemesValidateTheirColors(t *testing.T) {
+	app := signedInApp(t)
+
+	cases := []struct {
+		name, query, wantInBody string
+	}{
+		{
+			name:       "background is not a color",
+			query:      "color_name=Oops&color_bg=seventies&color_gradient_off=true&color_text=%23ffffff&color_winner=%23000000",
+			wantInBody: "background must be a hex color",
+		},
+		{
+			name:       "gradient without a direction",
+			query:      "color_name=Directionless&color_bg=%231a1a2e&color_bg_to=%2316213e&color_bg_dir=&color_text=%23ffffff&color_winner=%23ffd700",
+			wantInBody: "not one of the eight",
+		},
+		{
+			name:       "invented direction",
+			query:      "color_name=Sideways&color_bg=%231a1a2e&color_bg_to=%2316213e&color_bg_dir=to+nowhere&color_text=%23ffffff&color_winner=%23ffd700",
+			wantInBody: "not one of the eight",
+		},
+		{
+			name:       "text melts into the background",
+			query:      "color_name=Wash&color_bg=%23fffff0&color_gradient_off=true&color_text=%23777777&color_winner=%23000000",
+			wantInBody: "contrasts by",
+		},
+		{
+			// #767676 and #757575 clear the 4.5 ratio against both pure
+			// white and pure black by a hair, so only the crossing rule
+			// catches a gray on a white-to-black gradient.
+			name:       "text crosses the gradient",
+			query:      "color_name=Straddle&color_bg=%23ffffff&color_bg_to=%23000000&color_bg_dir=to+bottom&color_text=%23767676&color_winner=%23757575",
+			wantInBody: "passes through the award text color",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			resp := app.PostForm("/colors/add", c.query)
+			if resp.StatusCode != http.StatusUnprocessableEntity {
+				t.Fatalf("got %d, want %d\n%s", resp.StatusCode,
+					http.StatusUnprocessableEntity, webapptest.Body(t, resp))
+			}
+			if body := webapptest.Body(t, resp); !strings.Contains(body, c.wantInBody) {
+				t.Errorf("the refusal does not say %q:\n%s", c.wantInBody, body)
+			}
+		})
+	}
+
+	// None of the refusals wrote anything.
+	if got := strings.Count(webapptest.Body(t, app.Get("/colors/")), "<tr>") - 1; got != 1 {
+		t.Errorf("%d themes in the list after five refusals, want the one seeded Classic", got)
+	}
+
+	// A gradient saved solid: the checkbox outranks the stale value the form
+	// still carries, and the stored row loses the gradient completely.
+	colorForm(t, app, "/colors/add", "color_name=Fade"+
+		"&color_bg=%231a1a2e&color_bg_to=%2316213e&color_bg_dir=to+bottom+right"+
+		"&color_text=%23ffffff&color_winner=%23ffd700")
+	colorForm(t, app, "/colors/2/edit", "color_name=Fade"+
+		"&color_bg=%231a1a2e&color_bg_to=%2316213e&color_bg_dir=to+bottom+right&color_gradient_off=true"+
+		"&color_text=%23ffffff&color_winner=%23ffd700")
+
+	list := webapptest.Body(t, app.Get("/colors/"))
+	if strings.Contains(list, "linear-gradient(to bottom right") {
+		t.Errorf("the theme saved as solid kept its gradient:\n%s", list)
+	}
+}
+
+// TestAwardThemeAssignmentRoundTrip drives the select on the award form: a
+// choice round-trips through the edit form, an empty choice means the
+// default, and a theme that is not in the list is a refusal rather than a
+// save that quietly drops the choice.
+func TestAwardThemeAssignmentRoundTrip(t *testing.T) {
+	app := signedInApp(t)
+
+	colorForm(t, app, "/colors/add", solidThemeForm("Brand"))
+
+	colorForm(t, app, "/award/add", "award_slug=branded&award_title=Branded&award_sub=&award_theme=2")
+
+	// The edit form must come back with the chosen theme selected, not the
+	// producer's choice silently reset to Default.
+	edit := webapptest.Body(t, app.Get("/award/1/edit"))
+	if !strings.Contains(edit, `<option value="2" selected>`) {
+		t.Errorf("the award form did not select the assigned theme:\n%s", edit)
+	}
+
+	list := webapptest.Body(t, app.Get("/award/"))
+	if !strings.Contains(list, "Brand") {
+		t.Errorf("the award list does not show the assigned theme:\n%s", list)
+	}
+
+	colorForm(t, app, "/award/1/edit", "award_slug=branded&award_title=Branded&award_sub=&award_theme=")
+	if edit := webapptest.Body(t, app.Get("/award/1/edit")); strings.Contains(edit, `<option value="2" selected>`) {
+		t.Errorf("the cleared theme is still selected:\n%s", edit)
+	}
+	if list := webapptest.Body(t, app.Get("/award/")); !strings.Contains(list, "(default)") {
+		t.Errorf("the cleared award does not read as wearing the default:\n%s", list)
+	}
+
+	// A theme id that is not on the list — a second tab holding a page from
+	// before a delete — comes back as a refusal, not as an award wearing
+	// something else.
+	if got := app.PostForm("/award/add", "award_slug=ghost&award_title=Ghost&award_sub=&award_theme=999").StatusCode; got != http.StatusUnprocessableEntity {
+		t.Errorf("assigning an unknown theme: got %d, want %d", got, http.StatusUnprocessableEntity)
 	}
 }

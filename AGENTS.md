@@ -94,13 +94,14 @@ main.go                 slog setup, then webapp's Run (it owns signal handling)
 scripts/                presenter-check.mjs: the reveal choreography over CDP, against a running server
 pkg/server/server.go    options, Install, the whole route table, nav, auth wiring
 pkg/server/award.go     award CRUD and CSV import
+pkg/server/colortheme.go color theme CRUD, contrast validation, the seeded default
 pkg/server/recipient.go recipient CRUD and CSV import
 pkg/server/winning.go   assign/list/delete winnings, presenter JSON, broadcast triggers
 pkg/server/pages.go     login, presenter, admin landing
 pkg/server/params.go    path and form id parsing
 pkg/server/csv.go       CSV reading, uploaded-file extraction
 pkg/server/event.go     WebSocket fan-out (EventStream)
-pkg/types/type.go       GORM models: Award, Image, Recipient, Winning
+pkg/types/type.go       GORM models: Award, ColorTheme, Image, Recipient, Winning
 pkg/server/theme/       embedded via go:embed
   p2/                   page templates (present.p2, views/…) — no base, no nav, no login
   static/               present.css, mustache.js, reconnecting-websocket.js
@@ -134,13 +135,14 @@ directory the tests run from.
 
 Two halves share one process:
 
-* `/award/*`, `/recipient/*`, `/winnings/*` — the admin CRUD, server-rendered
-  over SQLite and behind a signed-in identity, each section owning one path
-  segment (see the navbar gotcha below). `/admin/` is the landing page a sign-in
+* `/award/*`, `/colors/*`, `/recipient/*`, `/winnings/*` — the admin CRUD,
+  server-rendered over SQLite and behind a signed-in identity, each section
+  owning one path segment (see the navbar gotcha below). `/admin/` is the landing page a sign-in
   lands on, and `/admin/{section}/*` redirects to the section's own address for
   bookmarks and pages rendered before the sections were broken out.
 * `/public/*` — unauthenticated: `/public/e` (WebSocket), `/public/present`
-  (standalone display page), `/public/winnings/{id}/data` (JSON for one winning).
+  (standalone display page), `/public/winnings/{id}/data` (JSON for one
+  winning, its award's resolved `ColorTheme` riding along).
 
 Presenting a winner:
 
@@ -269,8 +271,8 @@ for any new relation. Inside the transaction the handle is a `*gorm.DB`, so use
 
 ## Access control
 
-Each admin section — `/award`, `/recipient`, `/winnings`, and what is left of
-`/admin` — mounts behind its own `r.Use(u.auth.RequireLogin())`. That is an
+Each admin section — `/award`, `/colors`, `/recipient`, `/winnings`, and what
+is left of `/admin` — mounts behind its own `r.Use(u.auth.RequireLogin())`. That is an
 identity check, not a permission check. Permission gating would deny everyone
 today: authware grants
 are satisfied by group names, and this repository's `.htgroup` is empty. Only
@@ -323,13 +325,14 @@ theme, and the suite has no layout of its own to check.
   what the click meant and nothing more, and the button stays shaped like the rest
   of the remote control. Anything else that edits a row is a POST with a token.
 * The navbar lights an item by comparing the **first path segment** of its link
-  with the first segment of the request, which is why the three admin menus are
-  `Awards`/`Recipients`/`Winnings` at `/award`, `/recipient`, `/winnings` rather
-  than three children of one `/admin` page: mount two menus under one prefix and
-  both light up on every page. All three share `sectionWeight`, ties break
-  alphabetically, and that is the order a producer sees. The one cost is that
-  `/admin/` lights nothing, because it belongs to no section. Both facts are
-  pinned by `TestNavSplitsIntoThreeMenus` and `TestLandingPageLightsNoMenu`.
+  with the first segment of the request, which is why the four admin menus are
+  `Awards`/`Colors`/`Recipients`/`Winnings` at `/award`, `/colors`,
+  `/recipient`, `/winnings` rather than children of one `/admin` page: mount two
+  menus under one prefix and both light up on every page. All four share
+  `sectionWeight`, ties break alphabetically, and that is the order a producer
+  sees. The one cost is that `/admin/` lights nothing, because it belongs to no
+  section. Both facts are pinned by `TestNavSplitsIntoSectionMenus` and
+  `TestLandingPageLightsNoMenu`.
 * Present and reveal are `GET`s with no side-effect guard: they change nothing
   server-side, they publish an event. Anyone who can reach the admin UI can
   make the projector move; anyone who can reach `/public/*` can already see the
@@ -392,3 +395,34 @@ theme, and the suite has no layout of its own to check.
   never crosses an edge of it. It exits nonzero with the failing measurement
   named, and `--width` is how the ~1220px two-line floor is demonstrated rather
   than remembered.
+
+* A **ColorTheme is not the theme**. Capital-T Theme is the compiled-in webapp
+  layout (`webapp.WithTheme("bulma")`, the `@core` templates, `/static/core`);
+  a ColorTheme is the stage colors a venue types into a form at
+  `/colors/add`, and the `webapp-bulma` replace directive in `go.mod` belongs
+  to the first meaning while the word in `/colors` belongs to the second. Keep
+  them separate in names and in prose.
+* Stage colors ride on custom properties the script sets on the body
+  (`--award-bg`, `--award-bg-from`, `--award-bg-to`, `--award-bg-dir`,
+  `--award-text`, `--award-winner`), and **every paint clears all six before
+  setting any** — without the clear, the previous award's gradient bleeds its
+  second stop into an award that asked for a solid background. The CSS needs
+  no solid/gradient switch: the gradient rule is always present and paints
+  nothing while its stops are transparent. Color transitions belong to
+  `.award-bg` only; no stage class may transition a color, which is the same
+  shorthand trap the reveal timing bullet above describes.
+* A gradient's contrast check is **both endpoints on the same side of the
+  text luminance**, not just each endpoint at 4.5: white-to-black behind a
+  mid-gray title clears both endpoint ratios and still loses the text at the
+  point where the gradient passes through it. Luminance is monotonic along the
+  gradient, so same-side plus endpoints-clear means every stop is clear.
+  `TestColorThemesValidateTheirColors` holds the straddle pair that proves a
+  naive check waves it through.
+* There is exactly one default ColorTheme, enforced in the one writer
+  (`uiViewColorThemeUpsert` clears the other rows' flags in the same
+  transaction as the save) and defended at both ends: un-checking the current
+  default and deleting the default are both refusals, because a missing
+  default means the unassigned awards have nothing to fall back to. Deleting
+  a non-default theme is fine even while awards wear it — the dangling id
+  resolves to the default at read time (`themeForAward`), which is also what
+  `Award.ColorThemeID = 0` means.

@@ -1,0 +1,55 @@
+{% extends "@core/base.p2" %}
+
+{% comment %}
+  Delete a color theme.
+
+  Named twice over in the prompt: the theme's name, and what happens to the
+  awards wearing it. They are not deleted and not reassigned — a theme that
+  is gone is simply no longer there to resolve to, and those awards wear the
+  default from the next paint onward. The default theme itself refuses, in
+  the handler as much as on this page: without a default, the fallback rule
+  has nothing to fall back to.
+{% endcomment %}
+
+{% block title %}Delete color theme · {{ siteTitle|default:"AwardCast" }}{% endblock %}
+
+{% block content %}
+<div class="columns is-centered">
+  <div class="column is-two-thirds-tablet is-half-desktop">
+    <div class="box">
+      <h1 class="title is-4">Delete color theme</h1>
+
+      {% if rejected %}
+      <div class="notification is-danger is-light" role="alert">
+        <ul class="ml-4">
+          {% for reason in rejected %}
+          <li>{{ reason }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      <div class="notification is-warning is-light">
+        This cannot be undone. Awards wearing this theme fall back to the default theme.
+      </div>
+
+      <p>
+        Theme: <strong>{{ theme.Name }}</strong>
+        {% if theme.IsDefault %}<span class="tag is-info is-light">default</span>{% endif %}
+      </p>
+
+      <form method="post">
+        {{ csrfInput }}
+        <div class="field is-grouped">
+          <div class="control">
+            <button type="submit" class="button is-danger">Permanently delete</button>
+          </div>
+          <div class="control">
+            <a class="button is-light" href="/colors/">Cancel</a>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

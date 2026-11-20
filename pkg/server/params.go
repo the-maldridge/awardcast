@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/the-maldridge/webapp"
 )
@@ -24,4 +25,27 @@ func formID(r *http.Request) (uint, error) {
 		return 0, nil
 	}
 	return pathID(r)
+}
+
+// formOptionalUint reads a select of foreign keys whose first option is
+// "none" and submits an empty value. FormUint refuses exactly that value — a
+// blank there is a required field left empty — and this field is the case the
+// refusal was not written for: empty is the answer, it just means zero.
+func formOptionalUint(r *http.Request, name string) (uint, error) {
+	raw, err := webapp.FormString(r, name)
+	if err != nil {
+		return 0, err
+	}
+	if raw == "" {
+		return 0, nil
+	}
+	v, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil {
+		return 0, &webapp.BadInput{
+			Name:   name,
+			Value:  raw,
+			Reason: "must be a non-negative integer",
+		}
+	}
+	return uint(v), nil
 }
