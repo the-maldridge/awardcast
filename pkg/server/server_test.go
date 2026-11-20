@@ -617,6 +617,38 @@ func TestLoginWithBadCredentialsKeepsTheForm(t *testing.T) {
 	}
 }
 
+// TestSigninPageCarriesNoChrome pins the theme fix that took the navbar and
+// the footer off the page before sign-in. The navbar offers signed-in sections
+// and a sign-out to somebody holding neither an identity nor a session, and
+// the footer puts a build line on the one page the public ever sees. Both the
+// anonymous GET and the rejected POST are checked, because the failure path
+// re-renders the same template through another door and dressing coming back
+// through there is the same leak.
+func TestSigninPageCarriesNoChrome(t *testing.T) {
+	app := newTestApp(t)
+
+	body := webapptest.Body(t, app.Get("/login"))
+	if !strings.Contains(body, `name="username"`) {
+		t.Fatalf("the sign-in page is not the sign-in form:\n%s", body)
+	}
+	for _, chrome := range []string{"<nav", "navbar-burger", "navbar-menu", "<footer"} {
+		if strings.Contains(body, chrome) {
+			t.Errorf("the anonymous sign-in page carries %q", chrome)
+		}
+	}
+
+	resp := app.PostForm("/login", "username=nobody&password=nope")
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("bad credentials: got %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+	rejected := webapptest.Body(t, resp)
+	for _, chrome := range []string{"<nav", "navbar-burger", "navbar-menu", "<footer"} {
+		if strings.Contains(rejected, chrome) {
+			t.Errorf("the rejected sign-in page carries %q", chrome)
+		}
+	}
+}
+
 // TestLoginPageCarriesATokenIsTheFormsJob checks the CSRF input is actually in
 // the rendered forms rather than trusting that it was written into the file.
 func TestEveryFormCarriesCSRFToken(t *testing.T) {
