@@ -1293,3 +1293,136 @@ func TestAwardThemeAssignmentRoundTrip(t *testing.T) {
 		t.Errorf("assigning an unknown theme: got %d, want %d", got, http.StatusUnprocessableEntity)
 	}
 }
+
+// TestColorThemeGradientsCarryUpToFiveColors is the extended gradient: five
+// colors in through the form, all five on the list swatch and in the public
+// JSON, and the two rules that keep a long gradient honest — no gaps in the
+// middle, and no gradient that walks through the title's own color somewhere
+// between colors that each pass on their own.
+func TestColorThemeGradientsCarryUpToFiveColors(t *testing.T) {
+	app := signedInApp(t)
+
+	colorForm(t, app, "/colors/add", "color_name=Spectrum"+
+		"&color_bg=%231a1a2e&color_bg_to=%2316213e&color_bg3=%230f3460"+
+		"&color_bg4=%23533483&color_bg5=%231b1464&color_bg_dir=to+bottom"+
+		"&color_text=%23ffffff&color_winner=%23ffd700")
+
+	list := webapptest.Body(t, app.Get("/colors/"))
+	if !strings.Contains(list, "linear-gradient(to bottom, #1a1a2e, #16213e, #0f3460, #533483, #1b1464)") {
+		t.Errorf("the five-color theme did not render its whole gradient as a swatch:\n%s", list)
+	}
+
+	edit := webapptest.Body(t, app.Get("/colors/2/edit"))
+	if !strings.Contains(edit, `value="#0f3460"`) {
+		t.Errorf("the edit form lost gradient color 3:\n%s", edit)
+	}
+
+	// The presenter reads the whole stop list out of the winning data.
+	for _, form := range []string{
+		"award_slug=spectrum&award_title=Spectrum&award_sub=&award_theme=2",
+		"recipient_name=Anyone",
+		"award=1&recipient=1",
+	} {
+		var path string
+		switch {
+		case strings.HasPrefix(form, "award_slug"):
+			path = "/award/add"
+		case strings.HasPrefix(form, "recipient"):
+			path = "/recipient/add"
+		default:
+			path = "/winnings/assign"
+		}
+		if resp := app.PostForm(path, form); resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("POST %s: got %d", path, resp.StatusCode)
+		}
+	}
+	data := webapptest.Body(t, app.Get("/public/winnings/1/data"))
+	for _, want := range []string{`"Bg3":"#0f3460"`, `"Bg4":"#533483"`, `"Bg5":"#1b1464"`} {
+		if !strings.Contains(data, want) {
+			t.Errorf("the winning data does not carry %s:\n%s", want, data)
+		}
+	}
+
+	// The stops fill in order, which is what lets a shorter list mean a
+	// shorter gradient rather than a hole; color 3 without color 2 is a gap,
+	// not a two-color theme with a wish attached.
+	if resp := app.PostForm("/colors/add", "color_name=Gap"+
+		"&color_bg=%231a1a2e&color_bg_to=&color_bg3=%230f3460&color_bg_dir=to+bottom"+
+		"&color_text=%23ffffff&color_winner=%23ffd700"); resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("gradient color 3 without color 2: got %d, want %d",
+			resp.StatusCode, http.StatusUnprocessableEntity)
+	} else if body := webapptest.Body(t, resp); !strings.Contains(body, "in order") {
+		t.Errorf("the refusal does not say the colors fill in order:\n%s", body)
+	}
+
+	// Black-white-black: a mid-gray title clears every stop on its own and
+	// still vanishes twice, where the gradient crosses the title's own
+	// color on the way down and on the way back.
+	if resp := app.PostForm("/colors/add", "color_name=Hourglass"+
+		"&color_bg=%23000000&color_bg_to=%23ffffff&color_bg3=%23000000&color_bg_dir=to+bottom"+
+		"&color_text=%23767676&color_winner=%23757575"); resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("a gradient crossing its own title: got %d, want %d",
+			resp.StatusCode, http.StatusUnprocessableEntity)
+	} else if body := webapptest.Body(t, resp); !strings.Contains(body, "passes through the award text color") {
+		t.Errorf("the refusal does not name the crossing:\n%s", body)
+	}
+}
+
+// TestIllegibleSponsorColorsCanBeDeclared is the venue's escape hatch: colors
+// that fail readability may be saved when the venue says they are the point,
+// and colors that are not colors are refused all the same. The waiver covers
+// readability and nothing else.
+func TestIllegibleSponsorColorsCanBeDeclared(t *testing.T) {
+	app := signedInApp(t)
+
+	const wash = "color_name=Sponsor&color_bg=%23fffff0&color_gradient_off=true" +
+		"&color_text=%23777777&color_winner=%23000000"
+
+	// #777777 on #fffff0 is a ratio of 4.4, a hair under what the back of
+	// the room needs. Undeclared, that is a refusal as always.
+	if resp := app.PostForm("/colors/add", wash); resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("low contrast undeclared: got %d, want %d",
+			resp.StatusCode, http.StatusUnprocessableEntity)
+	}
+
+	colorForm(t, app, "/colors/add", wash+"&color_allow_illegible=true")
+
+	list := webapptest.Body(t, app.Get("/colors/"))
+	if !strings.Contains(cellText(list, "Sponsor"), "color-contrast-off-tag") {
+		t.Errorf("the declared-illegible theme is not listed as such:\n%s", list)
+	}
+
+	for _, form := range []string{
+		"award_slug=sponsored&award_title=Sponsored&award_sub=&award_theme=2",
+		"recipient_name=Anyone",
+		"award=1&recipient=1",
+	} {
+		var path string
+		switch {
+		case strings.HasPrefix(form, "award_slug"):
+			path = "/award/add"
+		case strings.HasPrefix(form, "recipient"):
+			path = "/recipient/add"
+		default:
+			path = "/winnings/assign"
+		}
+		if resp := app.PostForm(path, form); resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("POST %s: got %d", path, resp.StatusCode)
+		}
+	}
+	data := webapptest.Body(t, app.Get("/public/winnings/1/data"))
+	for _, want := range []string{`"AllowIllegible":true`, `"Text":"#777777"`} {
+		if !strings.Contains(data, want) {
+			t.Errorf("the winning data does not carry %s:\n%s", want, data)
+		}
+	}
+
+	// The waiver buys readability, not colorlessness: a checked box still
+	// cannot make "not-a-color" a background.
+	if resp := app.PostForm("/colors/add", "color_name=SponsorMania"+
+		"&color_bg=not-a-color&color_gradient_off=true"+
+		"&color_text=%23777777&color_winner=%23000000&color_allow_illegible=true"); resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("declared-illegible nonsense color: got %d, want %d",
+			resp.StatusCode, http.StatusUnprocessableEntity)
+	}
+}

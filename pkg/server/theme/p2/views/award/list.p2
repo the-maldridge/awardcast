@@ -42,11 +42,7 @@
         <td>{{ award.DispSub }}</td>
         <td>
           {% if award.Theme.Bg %}
-          {% if award.Theme.BgTo %}
-          <span class="tag color-swatch" style="display: inline-block; width: 2rem; height: 1rem; vertical-align: middle; border-radius: 3px; border: 1px solid #dbdbdb; background-color: {{ award.Theme.Bg }}; background-image: linear-gradient({{ award.Theme.BgDir }}, {{ award.Theme.Bg }}, {{ award.Theme.BgTo }});"></span>
-          {% else %}
-          <span class="tag color-swatch" style="display: inline-block; width: 2rem; height: 1rem; vertical-align: middle; border-radius: 3px; border: 1px solid #dbdbdb; background-color: {{ award.Theme.Bg }}; background-image: linear-gradient(to bottom, {{ award.Theme.Bg }} 50%, {{ award.Theme.Text }} 50%);"></span>
-          {% endif %}
+          <span class="tag color-swatch" style="display: inline-block; width: 2rem; height: 1rem; vertical-align: middle; border-radius: 3px; border: 1px solid #dbdbdb; background-color: {{ award.Theme.Bg }}; background-image: {{ award.Swatch }};"></span>
           {{ award.Theme.Name }}{% if not award.ColorThemeID %} <span class="has-text-grey">(default)</span>{% endif %}
           {% endif %}
         </td>

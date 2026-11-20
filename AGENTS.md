@@ -94,7 +94,7 @@ main.go                 slog setup, then webapp's Run (it owns signal handling)
 scripts/                presenter-check.mjs: the reveal choreography over CDP, against a running server
 pkg/server/server.go    options, Install, the whole route table, nav, auth wiring
 pkg/server/award.go     award CRUD and CSV import
-pkg/server/colortheme.go color theme CRUD, contrast validation, the seeded default
+pkg/server/colortheme.go color theme CRUD, gradient/contrast validation, the seeded default
 pkg/server/recipient.go recipient CRUD and CSV import
 pkg/server/winning.go   assign/list/delete winnings, presenter JSON, broadcast triggers
 pkg/server/pages.go     login, presenter, admin landing
@@ -403,21 +403,35 @@ theme, and the suite has no layout of its own to check.
   to the first meaning while the word in `/colors` belongs to the second. Keep
   them separate in names and in prose.
 * Stage colors ride on custom properties the script sets on the body
-  (`--award-bg`, `--award-bg-from`, `--award-bg-to`, `--award-bg-dir`,
-  `--award-text`, `--award-winner`), and **every paint clears all six before
-  setting any** — without the clear, the previous award's gradient bleeds its
-  second stop into an award that asked for a solid background. The CSS needs
-  no solid/gradient switch: the gradient rule is always present and paints
-  nothing while its stops are transparent. Color transitions belong to
-  `.award-bg` only; no stage class may transition a color, which is the same
-  shorthand trap the reveal timing bullet above describes.
-* A gradient's contrast check is **both endpoints on the same side of the
-  text luminance**, not just each endpoint at 4.5: white-to-black behind a
-  mid-gray title clears both endpoint ratios and still loses the text at the
-  point where the gradient passes through it. Luminance is monotonic along the
-  gradient, so same-side plus endpoints-clear means every stop is clear.
-  `TestColorThemesValidateTheirColors` holds the straddle pair that proves a
-  naive check waves it through.
+  (`--award-bg`, `--award-bg-image`, `--award-text`, `--award-winner`), and
+  **every paint clears all four before setting any** — without the clear, the
+  previous award's gradient keeps painting behind an award that asked for a
+  solid background. A gradient is one property: the script composes the whole
+  `linear-gradient()` from colors that each passed its own hex check, so the
+  stop count never needs a CSS switch — a solid theme sets no image and the
+  stylesheet's `none` leaves the plain `--award-bg` color showing. Color
+  transitions belong to `.award-bg` only; no stage class may transition a
+  color, which is the same shorthand trap the reveal timing bullet above
+  describes.
+* A background is **up to five colors** (`Bg` then `BgTo`, `Bg3`…`Bg5`) that
+  fill in order with no gaps; the count of non-empty colors is the whole
+  gradient story, and the form's solid checkbox clears all the extras at
+  once. The contrast check for a gradient is not just every stop at 4.5
+  against the text: it is also **no text luminance strictly between the
+  dimmest and brightest stop** — luminance runs monotonically between adjacent
+  stops, so that one bracket rule is the full crossing rule for any stop
+  count. Black-white-black behind a mid-gray title clears every per-stop
+  ratio and still loses the title twice.
+  `TestColorThemesValidateTheirColors` and
+  `TestColorThemeGradientsCarryUpToFiveColors` hold the straddles that prove
+  a naive check waves them through.
+* **`AllowIllegible` is a waiver, not a validation mode.** A sponsor scheme
+  that must be exact may be saved failing the contrast checks when the venue
+  checks the box — readability is the venue's to trade away, and the list
+  marks such a theme with `color-contrast-off-tag` so nobody forgets. It
+  skips `contrastReasons` and nothing else: hexes, directions, in-order
+  fills, and names are still refused when wrong, because a color cannot be
+  compared for contrast without first being a color.
 * There is exactly one default ColorTheme, enforced in the one writer
   (`uiViewColorThemeUpsert` clears the other rows' flags in the same
   transaction as the save) and defended at both ends: un-checking the current

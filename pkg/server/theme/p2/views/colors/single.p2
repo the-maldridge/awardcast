@@ -7,7 +7,10 @@
   control that cannot submit a hex the presenter cannot use — and the reason
   the gradient checkbox matters. A color input nobody touched holds black,
   not empty, so "solid background" checked is how the producer says the
-  second swatch means nothing this time.
+  extra swatches mean nothing this time: it clears all of them at once.
+  The gradient colors fill in order, and the checkbox is also the way back
+  down from a long gradient to a short one — check it, save, and rebuild
+  the gradient from there.
 
   The direction only means something with a second color; saving a solid
   theme discards it either way, which is why the select may happily display
@@ -63,11 +66,35 @@
         </div>
 
         <div class="field">
-          <label class="label" for="color_bg_to">Gradient end</label>
+          <label class="label" for="color_bg_to">Gradient color 2</label>
           <div class="control">
             <input class="input" type="color" id="color_bg_to" name="color_bg_to" value="{{ theme.BgTo }}">
           </div>
           <p class="help">Ignored while the background is solid.</p>
+        </div>
+
+        <div class="field">
+          <label class="label" for="color_bg3">Gradient color 3</label>
+          <div class="control">
+            <input class="input" type="color" id="color_bg3" name="color_bg3" value="{{ theme.Bg3 }}">
+          </div>
+          <p class="help">Optional. Colors fill in order, so this one only means something once gradient color 2 is in use.</p>
+        </div>
+
+        <div class="field">
+          <label class="label" for="color_bg4">Gradient color 4</label>
+          <div class="control">
+            <input class="input" type="color" id="color_bg4" name="color_bg4" value="{{ theme.Bg4 }}">
+          </div>
+          <p class="help">Optional. Leave unused colors alone; the gradient stops where the colors stop.</p>
+        </div>
+
+        <div class="field">
+          <label class="label" for="color_bg5">Gradient color 5</label>
+          <div class="control">
+            <input class="input" type="color" id="color_bg5" name="color_bg5" value="{{ theme.Bg5 }}">
+          </div>
+          <p class="help">The last color a background may fade through.</p>
         </div>
 
         <div class="field">
@@ -95,6 +122,16 @@
             <input class="input" type="color" id="color_winner" name="color_winner" value="{{ theme.Winner }}" required>
           </div>
           <p class="help">The name as it grows in. Also checked against the background.</p>
+        </div>
+
+        <div class="field">
+          <div class="control">
+            <label class="checkbox" for="color_allow_illegible">
+              <input type="checkbox" id="color_allow_illegible" name="color_allow_illegible" value="true"
+                     {% if theme.AllowIllegible %}checked{% endif %}> Allow low-contrast colors
+            </label>
+          </div>
+          <p class="help">For sponsor color schemes that must be exact even when the back row cannot read them. This waives readability alone; colors, direction, and names are still checked.</p>
         </div>
 
         <div class="field">

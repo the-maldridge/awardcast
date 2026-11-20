@@ -41,15 +41,12 @@
       {% for theme in themes %}
       <tr>
         <td>
-          {% if theme.BgTo %}
-          <span class="tag color-swatch" style="display: inline-block; width: 3.5rem; height: 1.5rem; vertical-align: middle; border-radius: 4px; border: 1px solid #dbdbdb; background-color: {{ theme.Bg }}; background-image: linear-gradient({{ theme.BgDir }}, {{ theme.Bg }}, {{ theme.BgTo }});"></span>
-          {% else %}
-          <span class="tag color-swatch" style="display: inline-block; width: 3.5rem; height: 1.5rem; vertical-align: middle; border-radius: 4px; border: 1px solid #dbdbdb; background-color: {{ theme.Bg }}; background-image: linear-gradient(to bottom, {{ theme.Bg }} 50%, {{ theme.Text }} 50%);"></span>
-          {% endif %}
+          <span class="tag color-swatch" style="display: inline-block; width: 3.5rem; height: 1.5rem; vertical-align: middle; border-radius: 4px; border: 1px solid #dbdbdb; background-color: {{ theme.Bg }}; background-image: {{ theme.Swatch }};"></span>
         </td>
         <td>
           {{ theme.Name }}
           {% if theme.IsDefault %}<span class="tag is-info is-light color-default-tag">default</span>{% endif %}
+          {% if theme.AllowIllegible %}<span class="tag is-warning is-light color-contrast-off-tag">contrast unchecked</span>{% endif %}
         </td>
         <td>{{ theme.UsedBy }}</td>
         <td class="has-text-right">

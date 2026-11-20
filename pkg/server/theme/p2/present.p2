@@ -68,8 +68,8 @@
       const HEX_COLOR = /^#[0-9a-f]{6}$/;
       const GRADIENT_DIRS = ['to top', 'to top right', 'to right', 'to bottom right',
         'to bottom', 'to bottom left', 'to left', 'to top left'];
-      const THEME_PROPS = ['--award-bg', '--award-bg-from', '--award-bg-to',
-        '--award-bg-dir', '--award-text', '--award-winner'];
+      const THEME_PROPS = ['--award-bg', '--award-bg-image', '--award-text',
+        '--award-winner'];
 
       // applyTheme paints one award's colors, and clears every property
       // before setting any: without the clear, the previous award's gradient
@@ -92,12 +92,18 @@
         const winner = hex(theme.Winner);
         if (winner) { document.body.style.setProperty('--award-winner', winner); }
 
-        const to = hex(theme.BgTo);
-        if (to) {
+        // The gradient image is composed here rather than assembled in CSS
+        // because its stop count varies, and every piece of the string was
+        // held up against HEX_COLOR or GRADIENT_DIRS first: a whole
+        // linear-gradient() built from individually validated parts cannot
+        // smuggle anything into a style. A theme with no extra colors sets
+        // nothing, and the stylesheet's own none keeps the solid color.
+        const stops = [theme.BgTo, theme.Bg3, theme.Bg4, theme.Bg5]
+          .map(hex).filter(function (v) { return v !== null; });
+        if (stops.length) {
           const dir = GRADIENT_DIRS.indexOf(theme.BgDir) >= 0 ? theme.BgDir : 'to bottom';
-          document.body.style.setProperty('--award-bg-from', bg);
-          document.body.style.setProperty('--award-bg-to', to);
-          document.body.style.setProperty('--award-bg-dir', dir);
+          document.body.style.setProperty('--award-bg-image',
+            'linear-gradient(' + dir + ', ' + [bg].concat(stops).join(', ') + ')');
         }
       }
 

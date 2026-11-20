@@ -179,8 +179,8 @@ const COLOR_CHECK = () => `
     const cs = getComputedStyle(document.body);
     const decl = document.body.style;
     const props = {};
-    for (const p of ['--award-bg', '--award-bg-from', '--award-bg-to',
-                     '--award-bg-dir', '--award-text', '--award-winner']) {
+    for (const p of ['--award-bg', '--award-bg-image', '--award-text',
+                     '--award-winner']) {
       props[p] = decl.getPropertyValue(p).trim();
     }
     return {
@@ -198,13 +198,20 @@ function rgb(hex) {
   return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
 }
 
-// The three states a paint can arrive in. The colors are ones a venue would
+// The states a paint can arrive in: a two-color gradient, a five-color one,
+// a solid background, and no theme at all. The colors are ones a venue would
 // plausibly type: every pairing in them clears the contrast bar the server
 // enforces, so the checks below are about plumbing and not about taste.
 const VARIANTS = [
   {
     name: 'gradient',
     theme: { Bg: '#1a1a2e', BgTo: '#16213e', BgDir: 'to bottom right',
+             Text: '#ffffff', Winner: '#ffd700' },
+  },
+  {
+    name: 'five',
+    theme: { Bg: '#1a1a2e', BgTo: '#16213e', Bg3: '#0f3460', Bg4: '#533483',
+             Bg5: '#1b1464', BgDir: 'to right',
              Text: '#ffffff', Winner: '#ffd700' },
   },
   {
@@ -240,33 +247,33 @@ function colorAssertions(variant, c) {
   if (c.bgColor !== rgb(t.Bg)) {
     msgs.push(`body background is ${c.bgColor}, want ${rgb(t.Bg)}`);
   }
-  if (t.BgTo) {
-    // A gradient theme: both stops present, and the script's own from/to/dir
-    // set (the "from" is the background again, spelled out for the gradient).
+  const stops = [t.Bg].concat([t.BgTo, t.Bg3, t.Bg4, t.Bg5].filter(Boolean));
+  if (stops.length > 1) {
+    // A gradient theme: the image the script composed must carry every stop.
+    // The inline custom property is checked spelled exactly as applyTheme
+    // writes it (the computed style would serialize the direction keyword
+    // as an angle, so keywords are only asserted inline).
     if (!c.bgImage.includes('linear-gradient(')) {
       msgs.push(`background-image is ${c.bgImage}, want a linear-gradient`);
     }
-    if (!c.bgImage.includes(rgb(t.Bg)) || !c.bgImage.includes(rgb(t.BgTo))) {
-      msgs.push(`background-image ${c.bgImage} is missing a stop`);
+    for (const stop of stops) {
+      if (!c.bgImage.includes(rgb(stop))) {
+        msgs.push(`background-image ${c.bgImage} is missing the stop ${stop}`);
+      }
     }
-    if (c.props['--award-bg-from'] !== t.Bg) {
-      msgs.push(`--award-bg-from is ${c.props['--award-bg-from']}, want ${t.Bg}`);
-    }
-    if (c.props['--award-bg-to'] !== t.BgTo) {
-      msgs.push(`--award-bg-to is ${c.props['--award-bg-to']}, want ${t.BgTo}`);
-    }
-    if (c.props['--award-bg-dir'] !== t.BgDir) {
-      msgs.push(`--award-bg-dir is ${c.props['--award-bg-dir']}, want ${t.BgDir}`);
+    const want = 'linear-gradient(' + (t.BgDir || 'to bottom') + ', ' + stops.join(', ') + ')';
+    if (c.props['--award-bg-image'] !== want) {
+      msgs.push(`--award-bg-image is ${c.props['--award-bg-image']}, want ${want}`);
     }
   } else {
-    // A solid theme: the gradient still exists in the rule but must paint
-    // nothing (both stops transparent), and the from/to/dir properties the
-    // previous award may have set are gone.
-    if (!c.bgImage.includes('rgba(0, 0, 0, 0)')) {
-      msgs.push(`solid theme's background-image ${c.bgImage} is not transparent`);
+    // A solid theme: no image is set at all, so the stylesheet's none keeps
+    // the plain color showing, and any image the previous award painted is
+    // cleared along with every other property.
+    if (c.bgImage !== 'none') {
+      msgs.push(`solid theme's background-image ${c.bgImage} is not none`);
     }
-    for (const p of ['--award-bg-from', '--award-bg-to', '--award-bg-dir']) {
-      if (c.props[p] !== '') msgs.push(`${p} still holds ${c.props[p]}`);
+    if (c.props['--award-bg-image'] !== '') {
+      msgs.push(`--award-bg-image still holds ${c.props['--award-bg-image']}`);
     }
   }
 

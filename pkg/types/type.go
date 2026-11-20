@@ -33,12 +33,16 @@ type ColorTheme struct {
 	// list and the award form both spell out.
 	Name string `gorm:"unique"`
 
-	// Bg is the background, a solid color on its own. BgTo turns it into
-	// the first stop of a gradient that runs to BgTo along BgDir, and the
-	// emptiness of BgTo is the whole difference between solid and
+	// Bg is the background, a solid color on its own. BgTo through Bg5
+	// extend it into a gradient that fades through the colors in order
+	// along BgDir, filled in order with no gaps. The emptiness of the
+	// first extra color is the whole difference between solid and
 	// gradient: there is no mode column for the two to disagree with.
 	Bg    string
 	BgTo  string
+	Bg3   string
+	Bg4   string
+	Bg5   string
 	BgDir string
 
 	// Text is the color of the award title and subtitle, Winner that of
@@ -50,6 +54,14 @@ type ColorTheme struct {
 	// IsDefault marks the one theme an award with no theme of its own
 	// wears. Exactly one theme holds it at a time.
 	IsDefault bool
+
+	// AllowIllegible switches the readability checks off for this theme.
+	// It exists for sponsor colors that must be exact even when the back
+	// row cannot read them: whoever is presenting the screen owns the
+	// choice to present something illegible, so the refusal is theirs to
+	// override. Everything except readability stays checked — a color
+	// that is not a color cannot be presented either.
+	AllowIllegible bool
 }
 
 // Image is used to store images within the database that go with the

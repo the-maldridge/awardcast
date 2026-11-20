@@ -42,6 +42,9 @@ type awardListRow struct {
 	types.Award
 
 	Theme types.ColorTheme
+
+	// Swatch previews the theme the row wears; see colorThemeRow.
+	Swatch string
 }
 
 func (u *ui) uiViewAwardList(w http.ResponseWriter, r *http.Request) error {
@@ -74,6 +77,7 @@ func (u *ui) uiViewAwardList(w http.ResponseWriter, r *http.Request) error {
 		} else if fallback != nil {
 			row.Theme = *fallback
 		}
+		row.Swatch = swatchCSS(row.Theme)
 		rows = append(rows, row)
 	}
 
