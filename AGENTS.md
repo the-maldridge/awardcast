@@ -70,14 +70,18 @@ alongside `AWARDCAST_PRODUCTION`. Do not put a path in it.
 | `AWARDCAST_DB` | `webapp.db` | SQLite path; the Dockerfile sets `/data/award.db`, so `/data` must be a volume |
 | `AWARDCAST_THEME_DIR` | unset | serve page templates from this directory instead of the embedded copy |
 | `AWARDCAST_READ_TIMEOUT` / `AWARDCAST_WRITE_TIMEOUT` | `24h` | Go durations, read by `timeouts()` in `server.go`; a value that does not parse is a startup error naming the variable. See the socket note under **Data flow** |
-| `AWARDCAST_IDLE_TIMEOUT` | `120s`, **not consulted** | the application calls `WithTimeouts`, so the framework fills none of them from the environment; `timeouts()` reads the two above itself and leaves idle at the framework default |
-| `AWARDCAST_MAX_BODY_BYTES` | `16MiB`, **not consulted** | the cap is set unconditionally in `Options()`: bulk CSV import is a feature, not a tunable, and the framework's 1 MiB default is smaller than a member list |
 | `AWARDCAST_PRODUCTION` | unset | framework hardening: Secure cookies, no template debugging |
 | `LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error`, slog text on stderr (the one variable `main.go` reads itself) |
 | `AUTHWARE_SESSION_KEY` | unset | long random string. Unset means a random key per boot, so every restart signs everybody out |
 | `AUTHWARE_BASIC_MECHS` | `htpasswd` | `:`-separated backends; `htpasswd` and `netauth` are the two compiled in |
 | `AUTHWARE_HTPASSWD_FILE` / `AUTHWARE_HTGROUP_FILE` | `.htpasswd` / `.htgroup` | resolved against the process CWD, and **both must exist** (`.htgroup` may be empty) |
 | `AUTHWARE_SESSION_LIFETIME` | `1h` | Go duration |
+
+Two knobs that used to be listed here are gone because nothing ever read them:
+`AWARDCAST_IDLE_TIMEOUT`, since the application passes its timeouts explicitly
+and the framework fills none of them from the environment, and
+`AWARDCAST_MAX_BODY_BYTES`, since the 16MiB cap is set unconditionally in
+`Options()` — bulk import is a feature, not a tunable.
 
 Health check: `GET /-/alive`, served by the framework without touching the
 database. The image is `scratch`, so there is no `HEALTHCHECK` instruction in
