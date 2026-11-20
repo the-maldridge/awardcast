@@ -483,6 +483,30 @@ func TestPresenterCarriesTheWireFormat(t *testing.T) {
 	}
 }
 
+// TestThemeStylesheetIsLinkedAndServed pins the other half of the theme's
+// sticky footer: base.p2 must link the theme's own stylesheet and the asset
+// must actually arrive. The framework refuses to start a theme whose base
+// links a missing file, so this mostly guards the serving half — the page
+// linking a stylesheet that answers 404 renders fine and floats its footer.
+// The check runs on the anonymous 401 page, which is a themed page through
+// the shared layout and needs no identity.
+func TestThemeStylesheetIsLinkedAndServed(t *testing.T) {
+	app := newTestApp(t)
+
+	resp := app.Get("/static/core/css/theme.css")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /static/core/css/theme.css: got %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if body := webapptest.Body(t, resp); !strings.Contains(body, "min-height") {
+		t.Errorf("the theme stylesheet arrived without its footer rule:\n%s", body)
+	}
+
+	page := webapptest.Body(t, app.Get("/award/"))
+	if !strings.Contains(page, `href="/static/core/css/theme.css"`) {
+		t.Errorf("a page rendered through the theme layout does not link its stylesheet:\n%s", page)
+	}
+}
+
 func TestBulkAwardImport(t *testing.T) {
 	tests := []struct {
 		name    string
