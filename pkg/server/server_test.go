@@ -462,6 +462,27 @@ func TestPresenterAssetsAreServed(t *testing.T) {
 	}
 }
 
+// TestPresenterCarriesTheWireFormat is the check the hand-copied constants
+// never had. The presenter page takes its three message-type numbers from the
+// same Go constants that publish them, so a template edit or a broken render
+// that leaves a hole where a number should be fails here rather than silently
+// turning every button on the admin list into a fetch the page ignores.
+func TestPresenterCarriesTheWireFormat(t *testing.T) {
+	app := newTestApp(t)
+
+	body := webapptest.Body(t, app.Get("/public/present"))
+	for _, want := range []string{
+		"const MsgTypeLoad = " + strconv.FormatUint(uint64(msgTypeLoad), 10) + ";",
+		"const MsgTypeReveal = " + strconv.FormatUint(uint64(msgTypeReveal), 10) + ";",
+		"const MsgTypeClear = " + strconv.FormatUint(uint64(msgTypeClear), 10) + ";",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the presenter page does not carry %q, so it and the server "+
+				"no longer agree on the wire format", want)
+		}
+	}
+}
+
 func TestBulkAwardImport(t *testing.T) {
 	tests := []struct {
 		name    string

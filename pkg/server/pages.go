@@ -89,7 +89,14 @@ func (u *ui) uiViewLoginPage(w http.ResponseWriter, r *http.Request) error {
 // sign-out button into what has to be a full-screen document with nothing in
 // the way of the award.
 func (u *ui) uiViewPresent(w http.ResponseWriter, r *http.Request) error {
-	u.View(w, r, presentTemplate, nil)
+	// The wire format is defined once, in winning.go, and rendered into the
+	// page. A second copy maintained by hand in the template is what used to
+	// decide whether a click moved the projector, and nothing checked it.
+	u.View(w, r, presentTemplate, webapp.Context{
+		"msgTypeLoad":   msgTypeLoad,
+		"msgTypeReveal": msgTypeReveal,
+		"msgTypeClear":  msgTypeClear,
+	})
 	return nil
 }
 

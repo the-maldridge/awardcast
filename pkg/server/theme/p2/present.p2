@@ -39,12 +39,14 @@
     {% endverbatim %}
 
     <script>
-      // The three numbers are the wire format shared with the server, defined as
-      // msgTypeLoad, msgTypeReveal, and msgTypeClear in winning.go. Nothing
-      // checks that the two agree, so changing one side means changing the other.
-      const MsgTypeLoad = 1;
-      const MsgTypeReveal = 2;
-      const MsgTypeClear = 3;
+      // The three numbers are the wire format shared with the server, and they
+      // arrive from it rather than being kept in sync by hand: msgTypeLoad,
+      // msgTypeReveal, and msgTypeClear in winning.go are rendered into this
+      // page, so there is one definition to change and the test suite fails
+      // if the page ever stops carrying it.
+      const MsgTypeLoad = {{ msgTypeLoad }};
+      const MsgTypeReveal = {{ msgTypeReveal }};
+      const MsgTypeClear = {{ msgTypeClear }};
 
       // How much name to allow before type size gives way. Two lines is the
       // height the room can follow at a glance; below 35% of the size the

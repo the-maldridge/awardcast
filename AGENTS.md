@@ -158,9 +158,11 @@ is the undo for a reveal that never reached the projector.
 
 Worth knowing:
 
-* The message type is a magic number in **two** places: `msgTypeLoad/Reveal/Clear`
-  in `pkg/server/winning.go` and `MsgTypeLoad/Reveal/Clear` in `present.p2`.
-  Nothing checks they agree.
+* The message type is defined once. `msgTypeLoad/Reveal/Clear` in
+  `pkg/server/winning.go` are rendered into `present.p2` when the page is
+  served, so the page carries the server's own numbers and there is no second
+  copy to drift. `TestPresenterCarriesTheWireFormat` is what fails if the
+  render ever stops putting them there.
 * The broadcast is fire-and-forget with no replay (16-message buffer per
   subscriber, slow clients are dropped). A presenter reload shows an empty
   stage until the next Present.
