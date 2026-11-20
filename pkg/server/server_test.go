@@ -507,6 +507,23 @@ func TestThemeStylesheetIsLinkedAndServed(t *testing.T) {
 	}
 }
 
+// TestSigninPageHooksItsCentering checks the two ends of the login box's
+// centring are joined up here: the page carries the body class the theme's
+// stylesheet hangs its centring rules on, and it links that stylesheet at all
+// — the no-chrome override means the login page gets no help from the navbar
+// pages having it.
+func TestSigninPageHooksItsCentering(t *testing.T) {
+	app := newTestApp(t)
+
+	page := webapptest.Body(t, app.Get("/login"))
+	if !strings.Contains(page, `<body class="wa-login-page"`) {
+		t.Errorf("the sign-in page does not carry the body class the theme centres on:\n%s", page)
+	}
+	if !strings.Contains(page, `href="/static/core/css/theme.css"`) {
+		t.Errorf("the sign-in page does not link the stylesheet that centres it:\n%s", page)
+	}
+}
+
 func TestBulkAwardImport(t *testing.T) {
 	tests := []struct {
 		name    string
