@@ -50,5 +50,3 @@ require (
 	gorm.io/driver/postgres v1.6.3 // indirect
 	gorm.io/driver/sqlite v1.6.0 // indirect
 )
-
-replace github.com/the-maldridge/webapp-bulma => ../webapp-bulma

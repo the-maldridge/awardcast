@@ -30,6 +30,13 @@ because the final image is `scratch` with `tini-static` as entrypoint.
 `go mod tidy` is a normal command again — `go.mod` lists its direct requires
 correctly, so tidying produces no churn.
 
+The `webapp-bulma` theme lives in a sibling checkout, wired in by `go.work`
+rather than a `replace` in `go.mod`: the `use` directives make both modules the
+build at once, an edit to the theme is live here on the next build, and
+`go.work.sum` carries the checksums that neither module's `go.sum` covers.
+Without the workspace the build falls back to the tagged `webapp-bulma` in
+`go.sum`, which is why the require line keeps a real version.
+
 ## Running locally
 
 ```sh
@@ -399,7 +406,7 @@ theme, and the suite has no layout of its own to check.
 * A **ColorTheme is not the theme**. Capital-T Theme is the compiled-in webapp
   layout (`webapp.WithTheme("bulma")`, the `@core` templates, `/static/core`);
   a ColorTheme is the stage colors a venue types into a form at
-  `/colors/add`, and the `webapp-bulma` replace directive in `go.mod` belongs
+  `/colors/add`, and the `webapp-bulma` workspace member in `go.work` belongs
   to the first meaning while the word in `/colors` belongs to the second. Keep
   them separate in names and in prose.
 * Stage colors ride on custom properties the script sets on the body
