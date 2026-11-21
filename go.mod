@@ -6,7 +6,7 @@ require (
 	github.com/coder/websocket v1.8.14
 	github.com/the-maldridge/authware v0.1.7
 	github.com/the-maldridge/webapp v0.0.2
-	github.com/the-maldridge/webapp-bulma v0.0.2
+	github.com/the-maldridge/webapp-bulma v0.0.3-0.20261121052525-b0414f68a8b2
 	gorm.io/gorm v1.31.2
 )
 

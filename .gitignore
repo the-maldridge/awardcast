@@ -2,3 +2,8 @@
 *.db-shm
 *.db-wal
 test_data
+
+# Local workspace: each developer wires up sibling checkouts themselves;
+# without it the build uses the pinned commit in go.mod.
+go.work
+go.work.sum

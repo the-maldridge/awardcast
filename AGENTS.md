@@ -30,12 +30,14 @@ because the final image is `scratch` with `tini-static` as entrypoint.
 `go mod tidy` is a normal command again — `go.mod` lists its direct requires
 correctly, so tidying produces no churn.
 
-The `webapp-bulma` theme lives in a sibling checkout, wired in by `go.work`
-rather than a `replace` in `go.mod`: the `use` directives make both modules the
-build at once, an edit to the theme is live here on the next build, and
-`go.work.sum` carries the checksums that neither module's `go.sum` covers.
-Without the workspace the build falls back to the tagged `webapp-bulma` in
-`go.sum`, which is why the require line keeps a real version.
+The `webapp-bulma` theme lives in a sibling checkout, wired in by a **local
+`go.work` that is deliberately not committed**: `go work init .
+../webapp-bulma` once after cloning makes both modules one build, and an edit
+to the theme is live here on the next build. Without the workspace the build
+uses what `go.mod` pins instead — a pseudo-version naming one specific
+`webapp-bulma` commit — so a bare clone builds, it just cannot see local
+theme edits. `go get github.com/the-maldridge/webapp-bulma@<commit>`
+re-pins that fallback after the theme's commits are pushed.
 
 ## Running locally
 
