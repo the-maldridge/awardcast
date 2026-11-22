@@ -321,18 +321,14 @@ func installAuth(app *webapp.App) (*auth.Service, error) {
 		return nil, fmt.Errorf("install auth: %w", err)
 	}
 
-	// InstallAuth names the session cookie after the environment prefix. This
-	// application predates that and issued authware's plain name, so the name
-	// is put back: an upgrade should not sign out whoever is already signed in.
-	err = svc.SetCookiePolicy(auth.CookiePolicy{
-		Name:     auth.DefaultCookieName,
-		Secure:   app.Config.CookieSecure,
-		SameSite: http.SameSiteLaxMode,
-		Lifetime: svc.SessionLifetime(),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("session cookie: %w", err)
-	}
+	// InstallAuth names both cookies after the environment prefix, which here
+	// gives awardcast_session and, once the framework release carrying it is
+	// in use, awardcast_csrf_token. The cookie jar is keyed by host and
+	// ignores ports, so the prefix is what keeps this application's cookies
+	// separate from any other application on the same host. This used to
+	// revert the session cookie to authware's plain name to spare signed-in
+	// users during one upgrade; the revert is gone, and that one forced
+	// sign-out is the price of not sharing a cookie jar.
 	return svc, nil
 }
 
