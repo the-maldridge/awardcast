@@ -116,6 +116,8 @@ github.com/the-maldridge/webapp-bulma v0.0.2 h1:uww4TIY9Nscom6fBYwQQ2nDFS2ZnGisZ
 github.com/the-maldridge/webapp-bulma v0.0.2/go.mod h1:OXSpbrvFaWpeVP/93SEA4r20m5r6OhJyIlyYv7iZWJY=
 github.com/the-maldridge/webapp-bulma v0.0.3-0.20261121052525-b0414f68a8b2 h1:PyfslLc0kt6GAvkRBCrCSVRmNIw/8heHsxIwatc/KJQ=
 github.com/the-maldridge/webapp-bulma v0.0.3-0.20261121052525-b0414f68a8b2/go.mod h1:OXSpbrvFaWpeVP/93SEA4r20m5r6OhJyIlyYv7iZWJY=
+github.com/the-maldridge/webapp-bulma v0.0.3 h1:wpglzgALh0WnkNumYc9WCXl75jtzu9e8e95MGYH66lQ=
+github.com/the-maldridge/webapp-bulma v0.0.3/go.mod h1:OXSpbrvFaWpeVP/93SEA4r20m5r6OhJyIlyYv7iZWJY=
 go.opentelemetry.io/auto/sdk v1.1.0 h1:cH53jehLUN6UFLY71z+NDOiNJqDdPRaXzTel0sJySYA=
 go.opentelemetry.io/auto/sdk v1.1.0/go.mod h1:3wSPjt5PWp2RhlCcmmOial7AvC4DQqZb7a7wCow3W8A=
 go.opentelemetry.io/otel v1.35.0 h1:xKWKPxrxB6OtMCbmMY021CqC45J+3Onta9MqjhnusiQ=
